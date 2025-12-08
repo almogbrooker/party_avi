@@ -1,0 +1,8 @@
+{
+  "name": "Bachelor Party QA",
+  "description": "An interactive video-based game for bachelor/bachelorette parties using Gemini AI to analyze Q&A videos.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
