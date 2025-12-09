@@ -1,0 +1,61 @@
+{
+  "questions": [
+    {
+      "id": "demo-q1",
+      "videoId": "demo-v1",
+      "question": "מה הדבר הכי מביך שהחתן עשה בבגרות?",
+      "answer": "נפל מול כל החבר'ה בבריכה",
+      "qStart": 5,
+      "qEnd": 10,
+      "aStart": 10,
+      "aEnd": 15,
+      "timestampStr": "00:05"
+    },
+    {
+      "id": "demo-q2",
+      "videoId": "demo-v1",
+      "question": "מה השיר שהחתן שונא הכי הרבה?",
+      "answer": "טיקטוק - איתי גלובלס",
+      "qStart": 20,
+      "qEnd": 25,
+      "aStart": 25,
+      "aEnd": 30,
+      "timestampStr": "00:20"
+    },
+    {
+      "id": "demo-q3",
+      "videoId": "demo-v2",
+      "question": "מה הייתה התגובה שלו כשפגש את הורי הכלה לראשונה?",
+      "answer": "שכח להגיד שלום והלך ישר לשירותים",
+      "qStart": 30,
+      "qEnd": 35,
+      "aStart": 35,
+      "aEnd": 40,
+      "timestampStr": "00:30"
+    }
+  ],
+  "missions": [
+    {
+      "id": "demo-m1",
+      "text": "לרקוד עם הכסא דקה שלמה בחושניות"
+    },
+    {
+      "id": "demo-m2",
+      "text": "לעשות חיקוי של החתן מתעצבן"
+    },
+    {
+      "id": "demo-m3",
+      "text": "לשתות כוס מים ללא ידיים"
+    },
+    {
+      "id": "demo-m4",
+      "text": "לספר בדיחה גסה"
+    },
+    {
+      "id": "demo-m5",
+      "text": "לנשק את הקרחת של החתן"
+    }
+  ],
+  "savedAt": "2025-12-09T10:45:00.000Z",
+  "isDemo": true
+}

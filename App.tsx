@@ -235,7 +235,27 @@ const App: React.FC = () => {
   };
 
   const generateShareLink = (role: 'player' | 'groom') => {
-    const baseUrl = window.location.origin + window.location.pathname;
+    // Store the tunnel URL when first accessed from a tunnel
+    const storageKey = 'tunnel_url';
+    const currentHost = window.location.host;
+    let baseUrl = window.location.origin + window.location.pathname;
+
+    // If currently accessing through a tunnel, store it
+    if (currentHost.includes('trycloudflare.com') || currentHost.includes('ngrok') || !currentHost.includes('localhost')) {
+      localStorage.setItem(storageKey, baseUrl);
+    }
+    // If accessing through localhost, try to get stored tunnel URL
+    else if (currentHost.includes('localhost') || currentHost.includes('127.0.0.1')) {
+      const storedTunnelUrl = localStorage.getItem(storageKey);
+      if (storedTunnelUrl) {
+        baseUrl = storedTunnelUrl;
+      }
+      // Fallback to known tunnel if none stored
+      else {
+        baseUrl = 'https://symptoms-prostores-basis-kidney.trycloudflare.com';
+      }
+    }
+
     let url = `${baseUrl}?code=${gameState.gameCode}`;
     if (role === 'groom') url += `&role=groom`;
     return url;
