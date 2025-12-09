@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameState, GameStage, Player, Mission, QAPair } from './types';
 import SetupPhase from './components/SetupPhase';
@@ -54,6 +55,14 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Helper to send state without heavy files
+  const broadcastSafeState = (state: GameState) => {
+      // Create a copy without the heavy video files to send over network
+      // @ts-ignore
+      const { videos, ...networkState } = state;
+      broadcastMessage({ type: 'STATE_UPDATE', payload: networkState });
+  };
+
   useEffect(() => {
     setOnMessage((msg, conn) => {
       switch (msg.type) {
@@ -82,7 +91,7 @@ const App: React.FC = () => {
                 : filtered;
               
               const newState = { ...prev, players: [...finalPlayers, newPlayer] };
-              broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
+              broadcastSafeState(newState);
               return newState;
             });
           }
@@ -94,7 +103,7 @@ const App: React.FC = () => {
                 ...prev,
                 currentVotes: { ...prev.currentVotes, [msg.payload.playerId]: msg.payload.vote }
               };
-              broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
+              broadcastSafeState(newState);
               return newState;
             });
           }
@@ -103,7 +112,7 @@ const App: React.FC = () => {
           if (gameState.isHost) {
               setGameState(prev => {
                   const newState = { ...prev, groomAnswer: msg.payload.answer };
-                  broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
+                  broadcastSafeState(newState);
                   return newState;
               });
           }
@@ -120,7 +129,7 @@ const App: React.FC = () => {
                           ? prev.pastVictims 
                           : [...prev.pastVictims, msg.payload.victimId]
                   };
-                  broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
+                  broadcastSafeState(newState);
                   return newState;
               });
           }
@@ -167,9 +176,15 @@ const App: React.FC = () => {
   };
 
   const handleStartRound = () => {
-    const newState = { stage: GameStage.PLAYING };
-    setGameState(prev => ({ ...prev, ...newState }));
-    broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
+    // Explicitly set phase to QUESTION to be sure
+    const newState = { stage: GameStage.PLAYING, roundPhase: 'QUESTION' as const };
+    
+    setGameState(prev => {
+       const updatedState = { ...prev, ...newState };
+       // Broadcast FULL state to ensure clients sync up if they missed something
+       broadcastSafeState(updatedState);
+       return updatedState;
+    });
   };
 
   const handleJoinGame = async (name: string, code: string, isGroom: boolean = false, photo?: string, existingId?: string) => {
@@ -220,7 +235,7 @@ const App: React.FC = () => {
   const handleHostUpdateState = (updates: Partial<GameState>) => {
     setGameState(prev => {
        const newState = { ...prev, ...updates };
-       broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
+       broadcastSafeState(newState);
        return newState;
     });
   };
@@ -235,27 +250,7 @@ const App: React.FC = () => {
   };
 
   const generateShareLink = (role: 'player' | 'groom') => {
-    // Store the tunnel URL when first accessed from a tunnel
-    const storageKey = 'tunnel_url';
-    const currentHost = window.location.host;
-    let baseUrl = window.location.origin + window.location.pathname;
-
-    // If currently accessing through a tunnel, store it
-    if (currentHost.includes('trycloudflare.com') || currentHost.includes('ngrok') || !currentHost.includes('localhost')) {
-      localStorage.setItem(storageKey, baseUrl);
-    }
-    // If accessing through localhost, try to get stored tunnel URL
-    else if (currentHost.includes('localhost') || currentHost.includes('127.0.0.1')) {
-      const storedTunnelUrl = localStorage.getItem(storageKey);
-      if (storedTunnelUrl) {
-        baseUrl = storedTunnelUrl;
-      }
-      // Fallback to known tunnel if none stored
-      else {
-        baseUrl = 'https://symptoms-prostores-basis-kidney.trycloudflare.com';
-      }
-    }
-
+    const baseUrl = window.location.origin + window.location.pathname;
     let url = `${baseUrl}?code=${gameState.gameCode}`;
     if (role === 'groom') url += `&role=groom`;
     return url;
@@ -309,7 +304,7 @@ const App: React.FC = () => {
            });
 
           const newState = { ...prev, players: [...prev.players, ...bots] };
-          broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
+          broadcastSafeState(newState);
           return newState;
       });
   };
@@ -317,13 +312,14 @@ const App: React.FC = () => {
   // Determine container classes based on stage
   const isPlaying = gameState.stage === GameStage.PLAYING;
   
-  // Full screen for PLAYING, regular container for others
+  // FIX: Allow scrolling for mobile players (groom/guests), keep fixed/hidden for Host TV view
+  // This resolves the issue where input fields were cut off on mobile.
   const containerClasses = isPlaying 
-    ? "relative w-full h-screen overflow-hidden bg-black" 
+    ? (gameState.isHost ? "relative w-full h-screen overflow-hidden bg-black" : "w-full min-h-screen bg-slate-900 overflow-y-auto") 
     : "relative z-10 container mx-auto px-4 py-6 min-h-screen flex flex-col";
 
   return (
-    <div className={`min-h-screen bg-[#0f172a] text-slate-100 font-rubik selection:bg-purple-500 selection:text-white ${isPlaying ? 'overflow-hidden' : 'overflow-x-hidden'}`} dir="rtl">
+    <div className={`min-h-screen bg-[#0f172a] text-slate-100 font-rubik selection:bg-purple-500 selection:text-white ${isPlaying && gameState.isHost ? 'overflow-hidden' : 'overflow-x-hidden'}`} dir="rtl">
       
       {!isPlaying && (
           <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">

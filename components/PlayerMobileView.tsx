@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameState, Player } from '../types';
 import { ThumbsUp, ThumbsDown, Wine, PartyPopper, Hourglass, Users, Crown, User, Sword, Send, PauseCircle, Hand } from 'lucide-react';
@@ -34,6 +35,11 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
   // Groom "wins" if he is right (groomResult is true)
   const groomWon = gameState.groomResult === true;
 
+  // SCROLL TO TOP ON PHASE CHANGE (Fix for groom missing input)
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [gameState.roundPhase, gameState.stage]);
+
   // Reset local vote and groom input when phase changes
   useEffect(() => {
     if (gameState.roundPhase !== 'VOTING') {
@@ -47,8 +53,13 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
     
     // Reset flashing
     setIsFlashing(false);
+    
+    // Alert Groom when it's time to answer
+    if (gameState.roundPhase === 'GROOM_ANSWERING' && isGroom) {
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    }
 
-  }, [gameState.roundPhase]);
+  }, [gameState.roundPhase, isGroom]);
 
   // Trigger confetti or vibrate
   useEffect(() => {
@@ -67,8 +78,6 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
     }
 
     // FLASHING FOR LOSERS WHO ARE NOT YET REVEALED
-    // If I am a loser, and it's VICTIM_REVEAL, and I am NOT the victim: Flash for drama
-    // (This simulates the roulette "passing over" them)
     if (gameState.roundPhase === 'VICTIM_REVEAL' && roundLoser && gameState.selectedVictimId !== playerId) {
         // Flash for 2 seconds then stop
         setIsFlashing(true);
@@ -238,16 +247,17 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
           </div>
       </div>
 
-      <div className="flex-grow flex flex-col justify-center relative z-10 w-full max-w-lg mx-auto">
+      <div className="flex-grow flex flex-col justify-center relative z-10 w-full max-w-lg mx-auto pb-8">
         
         {/* GROOM VIEW - SPECIFIC */}
         {isGroom ? (
-            <div className="space-y-8 text-center w-full">
+            <div className="space-y-8 text-center w-full flex flex-col items-center justify-center min-h-[50vh]">
                 {gameState.roundPhase === 'QUESTION' && (
-                    <div className="animate-fade-in">
-                        <div className="text-6xl mb-4">🤫</div>
-                        <h2 className="text-2xl font-bold text-yellow-400 mb-2">הקשב לשאלה!</h2>
-                        <p className="text-slate-400">תכף תצטרך לענות...</p>
+                    <div className="animate-fade-in bg-slate-800/50 p-6 rounded-2xl border border-yellow-500/20 shadow-xl">
+                        <div className="text-6xl mb-4 animate-bounce">📺</div>
+                        <h2 className="text-2xl font-bold text-yellow-400 mb-2">תסתכל על המסך!</h2>
+                        <p className="text-white font-bold text-lg">השאלה מוצגת כעת...</p>
+                        <p className="text-slate-400 text-sm mt-2">הכן את התשובה שלך</p>
                     </div>
                 )}
                  {gameState.roundPhase === 'GROOM_ANSWERING' && (
@@ -263,7 +273,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                                     value={groomInput}
                                     onChange={(e) => setGroomInput(e.target.value)}
                                     placeholder="הקלד תשובה כאן..."
-                                    className="w-full p-4 rounded-xl bg-slate-800 border border-slate-600 text-white focus:outline-none focus:border-yellow-500 text-center text-lg"
+                                    className="w-full p-4 rounded-xl bg-slate-800 border border-slate-600 text-white focus:outline-none focus:border-yellow-500 text-center text-lg shadow-inner"
                                     autoFocus
                                 />
                                 <button 
@@ -285,7 +295,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                     </div>
                 )}
                  {gameState.roundPhase === 'VOTING' && (
-                    <div className="animate-pulse">
+                    <div className="animate-pulse bg-slate-800/50 p-6 rounded-2xl border border-blue-500/20">
                         <div className="text-6xl mb-4">🗳️</div>
                         <h2 className="text-2xl font-bold text-blue-400 mb-2">החברים מצביעים עליך...</h2>
                         <p className="text-slate-400">האם הם מאמינים בך?</p>
