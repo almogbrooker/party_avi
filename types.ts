@@ -1,4 +1,5 @@
 
+
 export interface Mission {
   id: string;
   text: string;
@@ -12,6 +13,7 @@ export interface Player {
   drinks: number;
   isHost?: boolean;
   isGroom?: boolean; // New flag to identify the groom
+  isBot?: boolean; // Identify if player is a bot
 }
 
 export interface VideoAsset {

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameState, Player } from '../types';
 import { ThumbsUp, ThumbsDown, Wine, PartyPopper, Hourglass, Users, Crown, User, Sword, Send, PauseCircle, Hand } from 'lucide-react';
@@ -119,7 +118,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
       return 'text-slate-400';
   };
 
-  if (!me) return <div className="p-4 text-center">טוען...</div>;
+  if (!me) return <div className="p-4 text-center">טוען... (נסה לרענן אם נתקע)</div>;
 
   // RED SCREEN EFFECT FOR VICTIM (IMMEDIATE)
   if (gameState.roundPhase === 'VICTIM_REVEAL' && gameState.selectedVictimId === playerId) {
@@ -146,7 +145,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
   }
 
   return (
-    <div className={`min-h-screen ${isGroom ? 'bg-slate-900 border-x-4 border-yellow-600/30' : 'bg-slate-900'} text-white flex flex-col p-4`}>
+    <div className={`min-h-[100dvh] w-full ${isGroom ? 'bg-slate-900 border-x-4 border-yellow-600/30' : 'bg-slate-900'} text-white flex flex-col p-4`}>
       
       {/* PAUSE OVERLAY FOR PLAYERS */}
       {gameState.isPaused && (
@@ -158,7 +157,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
       )}
 
       {/* Header */}
-      <div className={`flex justify-between items-center mb-6 p-3 rounded-xl border shadow-lg relative z-20 ${isGroom ? 'bg-gradient-to-r from-slate-800 to-slate-900 border-yellow-500/50' : 'bg-slate-800 border-slate-700'}`}>
+      <div className={`flex justify-between items-center mb-6 p-3 rounded-xl border shadow-lg relative z-20 shrink-0 ${isGroom ? 'bg-gradient-to-r from-slate-800 to-slate-900 border-yellow-500/50' : 'bg-slate-800 border-slate-700'}`}>
         <div className="flex items-center gap-3">
           {/* My Avatar */}
           <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-700 border border-slate-600">
@@ -197,7 +196,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
 
       {/* Collapsible Players List */}
       <div className={`
-        overflow-hidden transition-all duration-300 ease-in-out bg-slate-800 rounded-xl border border-slate-700 mb-4
+        overflow-hidden transition-all duration-300 ease-in-out bg-slate-800 rounded-xl border border-slate-700 mb-4 shrink-0
         ${showPlayers ? 'max-h-64 opacity-100 shadow-xl' : 'max-h-0 opacity-0 border-0'}
       `}>
           <div className="p-3 space-y-2 overflow-y-auto max-h-64 custom-scrollbar">
@@ -239,11 +238,11 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
           </div>
       </div>
 
-      <div className="flex-grow flex flex-col justify-center relative z-10">
+      <div className="flex-grow flex flex-col justify-center relative z-10 w-full max-w-lg mx-auto">
         
         {/* GROOM VIEW - SPECIFIC */}
         {isGroom ? (
-            <div className="space-y-8 text-center">
+            <div className="space-y-8 text-center w-full">
                 {gameState.roundPhase === 'QUESTION' && (
                     <div className="animate-fade-in">
                         <div className="text-6xl mb-4">🤫</div>
@@ -252,34 +251,35 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                     </div>
                 )}
                  {gameState.roundPhase === 'GROOM_ANSWERING' && (
-                    <div className="animate-pulse w-full max-w-sm mx-auto">
+                    <div className="w-full flex flex-col items-center">
                         <div className="text-6xl mb-4">🎤</div>
                         <h2 className="text-2xl font-bold text-yellow-400 mb-2">מה התשובה שלך?</h2>
                         <p className="text-slate-400 mb-6">הסבר לחברים וכתוב בקצרה:</p>
                         
                         {!answerSubmitted ? (
-                            <div className="flex flex-col gap-3">
+                            <div className="flex flex-col gap-3 w-full">
                                 <input 
                                     type="text" 
                                     value={groomInput}
                                     onChange={(e) => setGroomInput(e.target.value)}
                                     placeholder="הקלד תשובה כאן..."
                                     className="w-full p-4 rounded-xl bg-slate-800 border border-slate-600 text-white focus:outline-none focus:border-yellow-500 text-center text-lg"
+                                    autoFocus
                                 />
                                 <button 
                                     onClick={handleGroomSubmit}
                                     disabled={!groomInput.trim()}
-                                    className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                                    className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 mt-2 shadow-lg active:scale-95 transition-transform"
                                 >
                                     <Send className="w-5 h-5" />
                                     שלח תשובה
                                 </button>
                             </div>
                         ) : (
-                            <div className="bg-yellow-500/20 border border-yellow-500 p-4 rounded-xl animate-pop">
-                                <p className="text-yellow-200 font-bold mb-1">התשובה נשלחה!</p>
-                                <p className="text-xl text-white">"{groomInput}"</p>
-                                <p className="text-xs text-slate-400 mt-2">המתן להצבעת החברים...</p>
+                            <div className="bg-yellow-500/20 border border-yellow-500 p-6 rounded-xl animate-pop w-full">
+                                <p className="text-yellow-200 font-bold mb-2">התשובה נשלחה!</p>
+                                <p className="text-2xl text-white font-bold">"{groomInput}"</p>
+                                <p className="text-xs text-slate-400 mt-4">המתן להצבעת החברים...</p>
                             </div>
                         )}
                     </div>
@@ -371,7 +371,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
             </div>
         ) : (
             // REGULAR PLAYER VIEW
-            <>
+            <div className="w-full">
                 {(gameState.roundPhase === 'QUESTION' || gameState.roundPhase === 'REVEAL') && (
                 <div className="text-center space-y-6 animate-pulse">
                     <div className="bg-slate-800/50 p-8 rounded-full inline-block">
@@ -393,7 +393,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                 )}
 
                 {gameState.roundPhase === 'VOTING' && (
-                <div className="space-y-6 animate-fade-in">
+                <div className="space-y-6 animate-fade-in w-full">
                     <h2 className="text-2xl font-bold text-center mb-4">האם החתן צדק?</h2>
                     
                     <button 
@@ -518,7 +518,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                         )}
                      </div>
                 )}
-            </>
+            </div>
         )}
       </div>
     </div>

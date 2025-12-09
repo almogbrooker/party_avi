@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Player, Mission, QAPair, GameState } from '../types';
 import confetti from 'canvas-confetti';
@@ -89,6 +88,66 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
 
   }, [roundPhase, isMusicOn, isPaused]);
 
+  // --- BOT AUTOMATION ---
+  useEffect(() => {
+    if (!gameState.isHost || isPaused) return;
+    
+    const groom = players.find(p => p.isGroom);
+    const bots = players.filter(p => p.isBot && !p.isGroom);
+
+    // 1. Groom Bot Answer Automation (30-40s delay)
+    if (roundPhase === 'GROOM_ANSWERING' && groom?.isBot && !groomAnswer) {
+         // Random text options for the bot
+         const botAnswers = [
+            "אני לא זוכר אבל בטח משהו מביך",
+            "חד משמעית כן",
+            "לא נראה לי",
+            "היא תגיד שאני מבולגן",
+            "פיצה?",
+            "תל אביב",
+            "ברור שאני אוהב אותה",
+            "שטויות במיץ",
+            "לא יודע..."
+         ];
+         const randomAnswer = botAnswers[Math.floor(Math.random() * botAnswers.length)];
+         
+         const timeout = setTimeout(() => {
+             onUpdateState({ groomAnswer: randomAnswer });
+         }, 30000 + Math.random() * 10000); // 30s to 40s
+         
+         return () => clearTimeout(timeout);
+    }
+
+    // 2. Voting Automation for Bots
+    if (roundPhase === 'VOTING') {
+        const botsToVote = bots.filter(b => currentVotes[b.id] === undefined);
+        if (botsToVote.length > 0) {
+             const timeout = setTimeout(() => {
+                 const newVotes = { ...currentVotes };
+                 botsToVote.forEach(b => {
+                     newVotes[b.id] = Math.random() > 0.5;
+                 });
+                 onUpdateState({ currentVotes: newVotes });
+             }, 3000); // 3s delay for votes
+             return () => clearTimeout(timeout);
+        }
+    }
+
+    // 3. Victim Selection Automation
+    if (roundPhase === 'VICTIM_SELECTION' && groom?.isBot && roundLosers.length > 0) {
+         const timeout = setTimeout(() => {
+             const randomVictim = roundLosers[Math.floor(Math.random() * roundLosers.length)];
+             onUpdateState({ 
+                 selectedVictimId: randomVictim,
+                 roundPhase: 'VICTIM_REVEAL',
+                 pastVictims: gameState.pastVictims.includes(randomVictim) ? gameState.pastVictims : [...gameState.pastVictims, randomVictim]
+             });
+         }, 5000);
+         return () => clearTimeout(timeout);
+    }
+
+  }, [roundPhase, isPaused, players, currentVotes, groomAnswer, roundLosers, gameState.isHost]);
+
   // --- VIDEO MANAGEMENT ---
   useEffect(() => {
     if (!videoRef.current || !currentQ) return;
@@ -168,7 +227,7 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
       if (roundPhase === 'GROOM_ANSWERING') {
           onUpdateState({ roundPhase: 'VOTING' });
       } else if (roundPhase === 'VOTING') {
-          // Auto-vote for lazy players
+          // Auto-vote for lazy players (and bots if manual logic failed)
           const nonGroomPlayers = players.filter(p => !p.isGroom);
           const newVotes = { ...currentVotes };
           let changed = false;
@@ -327,70 +386,107 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
   };
 
   return (
-    <div className="h-screen w-full flex flex-col bg-slate-900 relative overflow-hidden">
+    <div className="h-screen w-full flex flex-col bg-black relative overflow-hidden">
       {/* --- HEADER --- */}
-      <div className="h-20 bg-slate-900/90 border-b border-slate-700 flex items-center justify-between px-6 z-20 shrink-0">
-          <div className="flex items-center gap-4">
-              <div className="bg-purple-600 px-4 py-1 rounded-full text-sm font-bold shadow-lg shadow-purple-900/50">
+      {/* Reduced size and removed title for immersion */}
+      <div className="absolute top-0 left-0 right-0 p-4 z-50 flex items-center justify-between pointer-events-none">
+          <div className="pointer-events-auto">
+             <div className="bg-black/60 backdrop-blur px-4 py-2 rounded-full text-sm font-bold shadow-lg text-white border border-white/10">
                   שאלה {currentQuestionIndex + 1} / {questions.length}
-              </div>
-              <h2 className="text-xl font-bold text-slate-200 truncate max-w-xl">{currentQ.question}</h2>
+             </div>
           </div>
           
-          <div className="flex items-center gap-4">
-               {/* Controls */}
-               <button onClick={() => setIsMusicOn(!isMusicOn)} className={`p-3 rounded-full ${isMusicOn ? 'bg-slate-700 text-green-400' : 'bg-slate-800 text-slate-500'}`}>
+          <div className="flex items-center gap-4 pointer-events-auto">
+               <button onClick={() => setIsMusicOn(!isMusicOn)} className={`p-3 rounded-full shadow-lg backdrop-blur ${isMusicOn ? 'bg-black/60 text-green-400 border border-green-500/30' : 'bg-black/60 text-slate-500 border border-white/10'}`}>
                    {isMusicOn ? <Volume2 className="w-5 h-5"/> : <VolumeX className="w-5 h-5"/>}
                </button>
-               <button onClick={() => onUpdateState({ isPaused: !isPaused })} className={`p-3 rounded-full ${isPaused ? 'bg-orange-500 text-white animate-pulse' : 'bg-slate-700 text-slate-300'}`}>
+               <button onClick={() => onUpdateState({ isPaused: !isPaused })} className={`p-3 rounded-full shadow-lg backdrop-blur ${isPaused ? 'bg-orange-500 text-white animate-pulse' : 'bg-black/60 text-slate-300 border border-white/10'}`}>
                    {isPaused ? <Play className="w-5 h-5 fill-current"/> : <Pause className="w-5 h-5 fill-current"/>}
                </button>
           </div>
       </div>
 
       {/* --- MAIN CONTENT GRID --- */}
-      <div className="flex-1 grid grid-cols-12 gap-0 overflow-hidden relative">
+      <div className="flex-1 grid grid-cols-12 gap-0 overflow-hidden relative h-full">
           
           {/* LEFT: Video & Actions */}
-          <div className="col-span-8 relative bg-black flex flex-col items-center justify-center p-4">
+          <div className="col-span-8 relative bg-black flex flex-col items-center justify-center">
               {/* Video Player */}
-              <div className="relative w-full h-full max-h-[80vh] aspect-video rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+              <div className="relative w-full h-full overflow-hidden">
                   <video 
                     ref={videoRef}
-                    className="w-full h-full object-contain bg-black"
+                    className={`w-full h-full object-contain transition-all duration-1000 ${roundPhase === 'GROOM_ANSWERING' || roundPhase === 'VOTING' ? 'opacity-20 blur-xl scale-110' : 'opacity-100 scale-100'}`}
                     onTimeUpdate={handleTimeUpdate}
                     playsInline
                   />
-                  {/* Overlays */}
-                  {roundPhase === 'QUESTION' && <div className="absolute top-4 right-4 bg-black/60 backdrop-blur px-4 py-2 rounded-lg text-xl font-bold border border-white/10">🎥 צפה בשאלה</div>}
-                  {roundPhase === 'REVEAL' && <div className="absolute top-4 right-4 bg-green-600/80 backdrop-blur px-4 py-2 rounded-lg text-xl font-bold border border-white/10 animate-pulse">🎬 חשיפת התשובה</div>}
                   
-                  {/* Timer Overlay for Non-Video Phases */}
+                  {/* OVERLAYS */}
+
+                  {/* 1. Playing Overlay */}
+                  {roundPhase === 'QUESTION' && <div className="absolute top-6 right-6 bg-black/60 backdrop-blur px-6 py-3 rounded-xl text-xl font-bold border border-white/10 animate-fade-in flex items-center gap-2"><span className="animate-pulse text-red-500">●</span> מקשיבים לשאלה</div>}
+                  {roundPhase === 'REVEAL' && <div className="absolute top-6 right-6 bg-green-600/80 backdrop-blur px-6 py-3 rounded-xl text-xl font-bold border border-white/10 animate-pulse">🎬 חשיפת התשובה</div>}
+                  
+                  {/* 2. MASSIVE QUESTION OVERLAY (Groom Answering / Voting) */}
                   {(roundPhase === 'GROOM_ANSWERING' || roundPhase === 'VOTING') && (
-                      <div className="absolute inset-0 bg-slate-900/90 z-10 flex flex-col items-center justify-center">
-                          {renderTimer(roundPhase === 'GROOM_ANSWERING' ? 60 : 20)}
+                      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-12 text-center bg-slate-900/90 backdrop-blur-sm">
                           
-                          {/* Groom Answer Preview during timer */}
+                          {/* Main Question Card */}
+                          <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-600/50 p-12 rounded-[3rem] shadow-2xl max-w-5xl w-full animate-pop flex flex-col items-center gap-8 relative overflow-hidden">
+                                <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-purple-500 via-pink-500 to-yellow-500"></div>
+                                
+                                <h3 className="text-3xl text-purple-400 font-bold uppercase tracking-widest font-mono">השאלה היא:</h3>
+                                <h1 className="text-6xl md:text-7xl font-black text-white leading-tight drop-shadow-lg" dir="auto">
+                                    "{currentQ.question}"
+                                </h1>
+                                
+                                <div className="flex items-center gap-16 mt-8">
+                                     {renderTimer(roundPhase === 'GROOM_ANSWERING' ? 60 : 20)}
+                                     
+                                     {/* Side info in card */}
+                                     {roundPhase === 'GROOM_ANSWERING' && (
+                                         <div className="flex flex-col items-center animate-fade-in gap-4">
+                                             <div className="relative">
+                                                 <div className="absolute inset-0 bg-yellow-400 blur-2xl opacity-20 animate-pulse"></div>
+                                                 <Crown className="w-20 h-20 text-yellow-400 animate-bounce relative z-10" />
+                                             </div>
+                                             <span className="text-2xl text-yellow-100 font-bold">החתן חושב...</span>
+                                             {players.find(p => p.isGroom && p.isBot) && <span className="text-xs text-yellow-500/50 uppercase tracking-widest">Bot Mode</span>}
+                                         </div>
+                                     )}
+
+                                     {roundPhase === 'VOTING' && (
+                                         <div className="flex flex-col items-center animate-fade-in gap-4">
+                                             <div className="flex -space-x-4 mb-2">
+                                                 <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center border-4 border-slate-900 z-10 shadow-lg"><ThumbsUp className="w-8 h-8 text-white"/></div>
+                                                 <div className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center border-4 border-slate-900 shadow-lg"><ThumbsDown className="w-8 h-8 text-white"/></div>
+                                             </div>
+                                             <span className="text-2xl text-blue-200 font-bold">הצביעו עכשיו!</span>
+                                         </div>
+                                     )}
+                                </div>
+                          </div>
+                          
+                          {/* Groom Answer Preview (Bottom of screen) */}
                           {roundPhase === 'GROOM_ANSWERING' && groomAnswer && (
-                              <div className="mt-8 bg-yellow-500/20 border border-yellow-500 px-8 py-4 rounded-xl animate-pop max-w-2xl text-center">
-                                  <div className="text-yellow-400 text-sm font-bold mb-2 uppercase">החתן כתב:</div>
-                                  <div className="text-3xl text-white font-bold">"{groomAnswer}"</div>
+                              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-yellow-500 text-black px-8 py-4 rounded-xl animate-pop shadow-xl border-4 border-white max-w-2xl w-full text-center">
+                                  <div className="text-xs font-bold uppercase mb-1 opacity-70">החתן כתב:</div>
+                                  <div className="text-4xl font-black">"{groomAnswer}"</div>
                               </div>
                           )}
                       </div>
                   )}
 
-                  {/* Victim Roulette Overlay */}
+                  {/* 3. Victim Roulette Overlay */}
                   {(roundPhase === 'VICTIM_SELECTION' || roundPhase === 'VICTIM_REVEAL') && (
                       <div className="absolute inset-0 bg-slate-900/95 z-20 flex flex-col items-center justify-center">
-                          <h2 className="text-4xl font-black text-red-500 mb-8 uppercase tracking-widest animate-pulse">הקורבן הנבחר</h2>
+                          <h2 className="text-5xl font-black text-red-500 mb-12 uppercase tracking-widest animate-pulse drop-shadow-[0_0_20px_rgba(220,38,38,0.8)]">הקורבן הנבחר</h2>
                           
-                          <div className="relative w-64 h-64">
+                          <div className="relative w-80 h-80">
                               {/* Background Glow */}
                               <div className="absolute inset-0 bg-red-500 rounded-full blur-3xl opacity-20 animate-pulse"></div>
                               
                               {/* Avatar Cycle */}
-                              <div className="relative w-full h-full rounded-full border-8 border-red-600 overflow-hidden shadow-[0_0_50px_rgba(220,38,38,0.5)] bg-slate-800">
+                              <div className="relative w-full h-full rounded-full border-8 border-red-600 overflow-hidden shadow-[0_0_80px_rgba(220,38,38,0.6)] bg-slate-800">
                                    {roundLosers.length > 0 && (
                                        (() => {
                                            // Determine which ID to show
@@ -402,7 +498,7 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                                            return p?.photo ? (
                                                <img src={p.photo} className="w-full h-full object-cover" />
                                            ) : (
-                                               <div className="w-full h-full flex items-center justify-center"><User className="w-20 h-20 text-slate-500"/></div>
+                                               <div className="w-full h-full flex items-center justify-center"><User className="w-32 h-32 text-slate-500"/></div>
                                            );
                                        })()
                                    )}
@@ -410,11 +506,11 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                           </div>
                           
                           {roundPhase === 'VICTIM_REVEAL' && !isRouletteSpinning && selectedVictimId && (
-                               <div className="mt-8 text-center animate-pop">
-                                   <div className="text-5xl font-black text-white mb-2">{players.find(p => p.id === selectedVictimId)?.name}</div>
+                               <div className="mt-12 text-center animate-pop">
+                                   <div className="text-6xl font-black text-white mb-6 drop-shadow-xl">{players.find(p => p.id === selectedVictimId)?.name}</div>
                                    <button 
                                      onClick={() => onUpdateState({ roundPhase: 'MISSION_EXECUTION' })}
-                                     className="mt-6 bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-transform hover:scale-105"
+                                     className="mt-4 bg-red-600 hover:bg-red-500 text-white font-bold py-4 px-12 rounded-full text-2xl shadow-lg transition-transform hover:scale-105 border-4 border-red-800"
                                    >
                                        ביצוע משימה!
                                    </button>
@@ -423,67 +519,66 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                       </div>
                   )}
 
-                  {/* Judgment Phase Overlay */}
+                  {/* 4. Judgment Phase Overlay */}
                   {roundPhase === 'JUDGMENT' && (
-                      <div className="absolute inset-0 bg-slate-900/90 z-20 flex flex-col items-center justify-center gap-8 animate-fade-in">
-                          <h2 className="text-4xl font-bold text-white">האם החתן צדק?</h2>
-                          <div className="flex gap-8">
-                              <button onClick={() => handleJudgment(true)} className="group flex flex-col items-center gap-4 p-8 bg-green-500/10 hover:bg-green-500/20 border-2 border-green-500 rounded-3xl transition-all hover:scale-105">
-                                  <CheckCircle className="w-24 h-24 text-green-500 group-hover:animate-bounce" />
-                                  <span className="text-3xl font-bold text-green-400">צדק!</span>
+                      <div className="absolute inset-0 bg-slate-900/90 z-20 flex flex-col items-center justify-center gap-12 animate-fade-in">
+                          <h2 className="text-5xl font-black text-white drop-shadow-lg">האם החתן צדק?</h2>
+                          <div className="flex gap-12">
+                              <button onClick={() => handleJudgment(true)} className="group flex flex-col items-center gap-6 p-10 bg-green-500/10 hover:bg-green-500/20 border-4 border-green-500 rounded-3xl transition-all hover:scale-105">
+                                  <CheckCircle className="w-32 h-32 text-green-500 group-hover:animate-bounce shadow-green-500 drop-shadow-lg" />
+                                  <span className="text-4xl font-black text-green-400">צדק!</span>
                               </button>
-                              <button onClick={() => handleJudgment(false)} className="group flex flex-col items-center gap-4 p-8 bg-red-500/10 hover:bg-red-500/20 border-2 border-red-500 rounded-3xl transition-all hover:scale-105">
-                                  <XCircle className="w-24 h-24 text-red-500 group-hover:animate-shake" />
-                                  <span className="text-3xl font-bold text-red-400">טעה...</span>
+                              <button onClick={() => handleJudgment(false)} className="group flex flex-col items-center gap-6 p-10 bg-red-500/10 hover:bg-red-500/20 border-4 border-red-500 rounded-3xl transition-all hover:scale-105">
+                                  <XCircle className="w-32 h-32 text-red-500 group-hover:animate-shake shadow-red-500 drop-shadow-lg" />
+                                  <span className="text-4xl font-black text-red-400">טעה...</span>
                               </button>
                           </div>
                       </div>
                   )}
 
-                  {/* Mission Execution Overlay */}
+                  {/* 5. Mission Execution Overlay */}
                   {roundPhase === 'MISSION_EXECUTION' && (
                       <div className="absolute inset-0 bg-slate-900 z-30 flex items-center justify-center p-8 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
-                          <div className="w-full max-w-4xl border-4 border-yellow-500 bg-black/80 p-12 rounded-3xl text-center relative shadow-[0_0_100px_rgba(234,179,8,0.3)]">
-                               <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-yellow-500 text-black font-black text-2xl px-8 py-2 rounded-full uppercase tracking-widest rotate-2 shadow-lg">
+                          <div className="w-full max-w-5xl border-4 border-yellow-500 bg-black/80 p-12 rounded-[3rem] text-center relative shadow-[0_0_100px_rgba(234,179,8,0.3)]">
+                               <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-yellow-500 text-black font-black text-3xl px-12 py-4 rounded-full uppercase tracking-widest rotate-2 shadow-xl border-4 border-white">
                                    VS
                                </div>
                                
-                               <div className="flex justify-between items-center mb-12">
+                               <div className="flex justify-between items-center mb-16 px-12">
                                    <div className="text-center w-1/3">
-                                       <div className="w-32 h-32 mx-auto rounded-full border-4 border-yellow-500 overflow-hidden mb-4 shadow-xl">
+                                       <div className="w-40 h-40 mx-auto rounded-full border-8 border-yellow-500 overflow-hidden mb-6 shadow-2xl">
                                             {players.find(p => p.isGroom)?.photo ? (
                                                 <img src={players.find(p => p.isGroom)?.photo} className="w-full h-full object-cover" />
                                             ) : <User className="w-full h-full bg-slate-800 p-4" />}
                                        </div>
-                                       <h3 className="text-2xl font-bold text-yellow-400">החתן</h3>
+                                       <h3 className="text-3xl font-black text-yellow-400 drop-shadow-md">החתן</h3>
                                    </div>
                                    
                                    <div className="w-1/3 flex flex-col items-center">
-                                       <Sword className="w-20 h-20 text-red-500 animate-pulse" />
+                                       <Sword className="w-32 h-32 text-red-500 animate-[pulse_0.5s_ease-in-out_infinite]" />
                                    </div>
 
                                    <div className="text-center w-1/3">
-                                       <div className="w-32 h-32 mx-auto rounded-full border-4 border-red-500 overflow-hidden mb-4 shadow-xl bg-slate-800 relative">
+                                       <div className="w-40 h-40 mx-auto rounded-full border-8 border-red-500 overflow-hidden mb-6 shadow-2xl bg-slate-800 relative">
                                             {/* Show victim photo or group icon */}
                                             {players.find(p => p.id === selectedVictimId)?.photo ? (
                                                 <img src={players.find(p => p.id === selectedVictimId)?.photo} className="w-full h-full object-cover grayscale" />
-                                            ) : <Skull className="w-full h-full p-6 text-red-500" />}
+                                            ) : <Skull className="w-full h-full p-8 text-red-500" />}
                                        </div>
-                                       <h3 className="text-2xl font-bold text-red-400">הקורבן</h3>
+                                       <h3 className="text-3xl font-black text-red-400 drop-shadow-md">הקורבן</h3>
                                    </div>
                                </div>
 
-                               <div className="bg-white/10 p-6 rounded-xl border border-white/20 mb-8">
-                                   <h4 className="text-slate-400 text-sm uppercase tracking-wider mb-2">המשימה</h4>
-                                   <p className="text-3xl font-black text-white leading-relaxed">
-                                       {currentQ.question} {/* Or specific mission if separated logic */}
-                                       {/* For this logic, we assume we might want to show a specific mission text, but sticking to prompt flow */}
-                                       בצעו את המשימה שעל הפרק!
+                               <div className="bg-white/10 p-8 rounded-2xl border border-white/20 mb-10 backdrop-blur-sm">
+                                   <h4 className="text-slate-400 text-lg uppercase tracking-wider mb-4 font-bold">המשימה היא:</h4>
+                                   <p className="text-4xl md:text-5xl font-black text-white leading-relaxed">
+                                       {currentQ.question}
                                    </p>
+                                   <div className="mt-4 text-yellow-400 font-bold text-xl animate-pulse">בצעו את המשימה עכשיו!</div>
                                </div>
 
-                               <button onClick={nextQuestion} className="bg-yellow-500 hover:bg-yellow-400 text-black font-black text-xl py-4 px-12 rounded-full shadow-lg transform transition-transform hover:scale-105 flex items-center justify-center gap-3 mx-auto">
-                                   <CheckCircle className="w-6 h-6" />
+                               <button onClick={nextQuestion} className="bg-gradient-to-r from-yellow-600 to-yellow-400 hover:from-yellow-500 hover:to-yellow-300 text-black font-black text-2xl py-5 px-16 rounded-full shadow-[0_10px_40px_rgba(234,179,8,0.4)] transform transition-transform hover:scale-105 flex items-center justify-center gap-4 mx-auto">
+                                   <CheckCircle className="w-8 h-8" />
                                    המשימה הושלמה!
                                </button>
                           </div>
@@ -503,37 +598,37 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
           </div>
 
           {/* RIGHT: Leaderboard & Status */}
-          <div className="col-span-4 bg-slate-900 border-r border-slate-700 flex flex-col">
+          <div className="col-span-4 bg-slate-900 border-l border-slate-800 flex flex-col z-20 shadow-2xl h-full">
               {/* Header Status */}
-              <div className="p-4 bg-slate-800 border-b border-slate-700">
-                  <div className="flex justify-between items-center mb-2">
-                       <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">סטטוס</span>
+              <div className="p-6 bg-slate-800 border-b border-slate-700">
+                  <div className="flex justify-between items-center mb-4">
+                       <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">סטטוס משחק</span>
                        <div className="flex items-center gap-2">
                            {roundPhase === 'VOTING' && (
                                <>
-                                   <div className="flex items-center gap-1 text-green-400 text-xs font-bold bg-green-900/30 px-2 py-1 rounded">
+                                   <div className="flex items-center gap-1 text-green-400 text-xs font-bold bg-green-900/30 px-3 py-1.5 rounded-lg border border-green-500/20">
                                        <ThumbsUp className="w-3 h-3" /> {Object.values(currentVotes).filter(v => v).length}
                                    </div>
-                                   <div className="flex items-center gap-1 text-red-400 text-xs font-bold bg-red-900/30 px-2 py-1 rounded">
+                                   <div className="flex items-center gap-1 text-red-400 text-xs font-bold bg-red-900/30 px-3 py-1.5 rounded-lg border border-red-500/20">
                                        <ThumbsDown className="w-3 h-3" /> {Object.values(currentVotes).filter(v => !v).length}
                                    </div>
                                </>
                            )}
-                           <span className="bg-slate-700 text-white text-xs px-2 py-1 rounded-full">{Object.keys(currentVotes).length}/{players.filter(p => !p.isGroom).length}</span>
+                           <span className="bg-slate-700 text-white text-xs px-3 py-1.5 rounded-full font-mono font-bold">{Object.keys(currentVotes).length}/{players.filter(p => !p.isGroom).length}</span>
                        </div>
                   </div>
                   
                   {/* Groom Answer Display Small */}
                   {groomAnswer && roundPhase !== 'GROOM_ANSWERING' && (
-                      <div className="mt-2 bg-yellow-900/30 border border-yellow-500/30 p-2 rounded text-center">
-                          <span className="text-xs text-yellow-500 block mb-1">תשובת החתן</span>
-                          <span className="text-white font-bold">{groomAnswer}</span>
+                      <div className="mt-2 bg-gradient-to-r from-yellow-900/40 to-slate-800 border border-yellow-500/30 p-3 rounded-xl text-center shadow-lg">
+                          <span className="text-xs text-yellow-500 block mb-1 font-bold uppercase tracking-wide">תשובת החתן</span>
+                          <span className="text-white font-black text-lg">"{groomAnswer}"</span>
                       </div>
                   )}
               </div>
 
               {/* Player Grid */}
-              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-900">
                   <div className="grid grid-cols-1 gap-3">
                       {players.sort((a,b) => b.score - a.score).map(p => {
                           const vote = currentVotes[p.id];
@@ -548,22 +643,25 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                                   relative p-3 rounded-xl border flex items-center justify-between transition-all duration-300
                                   ${p.isGroom ? 'bg-gradient-to-r from-yellow-900/40 to-slate-800 border-yellow-500/50' : 'bg-slate-800 border-slate-700'}
                                   ${isWinner ? 'border-green-500 bg-green-900/20 shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}
-                                  ${isLoser ? 'border-red-500 opacity-80' : ''}
-                                  ${isVictim ? 'border-red-500 bg-red-900/50 scale-105 z-10' : ''}
+                                  ${isLoser ? 'border-red-500 opacity-60' : ''}
+                                  ${isVictim ? 'border-red-500 bg-red-900/50 scale-105 z-10 opacity-100' : ''}
                               `}>
                                   <div className="flex items-center gap-3">
                                       <div className="relative">
-                                          <div className="w-10 h-10 rounded-full bg-slate-700 overflow-hidden border border-slate-600">
+                                          <div className={`w-12 h-12 rounded-full bg-slate-700 overflow-hidden border-2 ${p.isBot ? 'border-slate-500 border-dashed' : 'border-slate-600'}`}>
                                               {p.photo ? <img src={p.photo} className="w-full h-full object-cover"/> : <User className="w-full h-full p-2 text-slate-400"/>}
                                           </div>
-                                          {p.isGroom && <div className="absolute -top-2 -left-1 text-yellow-500"><Crown className="w-5 h-5 fill-current"/></div>}
-                                          {isVictim && <div className="absolute -bottom-1 -right-1 bg-red-600 rounded-full p-0.5"><Skull className="w-3 h-3 text-white"/></div>}
+                                          {p.isGroom && <div className="absolute -top-2 -left-1 text-yellow-500 drop-shadow-md"><Crown className="w-6 h-6 fill-current"/></div>}
+                                          {isVictim && <div className="absolute -bottom-1 -right-1 bg-red-600 rounded-full p-1 border border-white"><Skull className="w-3 h-3 text-white"/></div>}
                                       </div>
                                       <div>
-                                          <div className={`font-bold text-sm ${p.isGroom ? 'text-yellow-400' : 'text-slate-200'}`}>{p.name}</div>
-                                          <div className="flex items-center gap-2 text-xs text-slate-400">
-                                              <span>{p.score} נק'</span>
-                                              {p.drinks > 0 && <span className="text-red-400 flex items-center"><Wine className="w-3 h-3 mr-0.5"/> {p.drinks}</span>}
+                                          <div className={`font-bold text-base flex items-center gap-2 ${p.isGroom ? 'text-yellow-400' : 'text-slate-200'}`}>
+                                              {p.name}
+                                              {p.isBot && <span className="text-[9px] bg-slate-700 px-1.5 rounded text-slate-400 font-normal">BOT</span>}
+                                          </div>
+                                          <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
+                                              <span className="font-mono font-bold bg-slate-950 px-1.5 rounded">{p.score}</span>
+                                              {p.drinks > 0 && <span className="text-red-400 flex items-center font-bold bg-red-950/50 px-1.5 rounded border border-red-900/50"><Wine className="w-3 h-3 mr-1"/> {p.drinks}</span>}
                                           </div>
                                       </div>
                                   </div>
@@ -572,13 +670,13 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                                   <div>
                                       {isVoting && (
                                           vote !== undefined 
-                                            ? <div className="w-3 h-3 bg-green-500 rounded-full shadow-[0_0_10px_#22c55e]"></div>
-                                            : <Loader2 className="w-4 h-4 text-slate-600 animate-spin" />
+                                            ? <div className="w-4 h-4 bg-green-500 rounded-full shadow-[0_0_10px_#22c55e] animate-pop"></div>
+                                            : <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
                                       )}
                                       {isReveal && !p.isGroom && (
                                           vote !== undefined ? (
-                                              <div className={`p-1 rounded-full ${vote ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                                                  {vote ? <ThumbsUp className="w-4 h-4" /> : <ThumbsDown className="w-4 h-4" />}
+                                              <div className={`p-1.5 rounded-full ${vote ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                  {vote ? <ThumbsUp className="w-5 h-5" /> : <ThumbsDown className="w-5 h-5" />}
                                               </div>
                                           ) : <span className="text-xs text-slate-600">-</span>
                                       )}

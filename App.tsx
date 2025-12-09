@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameState, GameStage, Player, Mission, QAPair } from './types';
 import SetupPhase from './components/SetupPhase';
@@ -6,7 +5,7 @@ import GamePhase from './components/GamePhase';
 import SummaryPhase from './components/SummaryPhase';
 import PlayerMobileView from './components/PlayerMobileView';
 import { initializePeer, connectToHost, setOnMessage, broadcastMessage, sendMessageToHost, disconnectAll } from './services/peerService';
-import { Sparkles, Wifi, Share2, Crown, Copy, User, Loader2 } from 'lucide-react';
+import { Sparkles, Wifi, Share2, Crown, Copy, User, Loader2, LogOut, Bot } from 'lucide-react';
 
 const generateGameCode = () => {
   return Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -71,7 +70,8 @@ const App: React.FC = () => {
                 score: existingPlayer ? existingPlayer.score : 0,
                 drinks: existingPlayer ? existingPlayer.drinks : 0,
                 isGroom: msg.payload.isGroom,
-                photo: msg.payload.photo || existingPlayer?.photo // Update photo if provided, or keep old
+                photo: msg.payload.photo || existingPlayer?.photo, // Update photo if provided, or keep old
+                isBot: false
               };
 
               const filtered = prev.players.filter(p => p.id !== newPlayer.id);
@@ -173,24 +173,47 @@ const App: React.FC = () => {
   };
 
   const handleJoinGame = async (name: string, code: string, isGroom: boolean = false, photo?: string, existingId?: string) => {
-    setIsLoading(true);
+    // OPTIMISTIC UPDATE: Transition to LOBBY immediately
+    const tempId = existingId || `temp-${Date.now()}`;
+    const myPlayer: Player = {
+        id: tempId,
+        name: name,
+        score: 0,
+        drinks: 0,
+        isGroom: isGroom,
+        photo: photo,
+        isBot: false
+    };
+
+    setMyPlayerId(tempId);
+    setGameState(prev => ({
+        ...prev,
+        stage: GameStage.LOBBY,
+        gameCode: code,
+        players: [myPlayer]
+    }));
+    
+    setConnectionStatus('connecting');
+
     try {
       const conn = await connectToHost(code, { name });
       
-      // If we have an existing ID (from localStorage), use it to identify ourselves to the game logic
-      // The peerId (conn.peer) is just for the network transport.
-      // Ideally, peerId should match existingId, but PeerJS doesn't guarantee ID reuse easily if connection is ghosted.
-      // So we use the payload ID as the "Game Logic ID".
-      const playerId = existingId || conn.peer;
+      const realId = conn.peer;
+      setMyPlayerId(realId);
       
-      setMyPlayerId(playerId);
+      // Replace temporary ID with real ID in state
+      setGameState(prev => ({
+          ...prev,
+          players: prev.players.map(p => p.id === tempId ? { ...p, id: realId } : p)
+      }));
+      
       setConnectionStatus('connected');
-      sendMessageToHost({ type: 'JOIN', payload: { name, id: playerId, isGroom, photo } });
+      sendMessageToHost({ type: 'JOIN', payload: { name, id: realId, isGroom, photo } });
+
     } catch (err: any) {
-      setError("Could not connect to game " + code);
+      console.error(err);
+      setError("לא הצלחנו להתחבר למשחק. וודא שהקוד נכון.");
       setConnectionStatus('disconnected');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -236,38 +259,86 @@ const App: React.FC = () => {
       }
   }
 
+  const addBots = () => {
+      setGameState(prev => {
+          const bots: Player[] = [];
+          
+          // Add Groom Bot if needed
+          const hasGroom = prev.players.some(p => p.isGroom);
+          if (!hasGroom) {
+              bots.push({
+                  id: `bot-groom-${Date.now()}`,
+                  name: 'חתן בוט',
+                  score: 0,
+                  drinks: 0,
+                  isGroom: true,
+                  isBot: true,
+                  photo: 'https://api.dicebear.com/9.x/avataaars/svg?seed=Felix' 
+              });
+          }
+
+          // Add 1 regular bot
+          bots.push({
+              id: `bot-player-${Date.now()}`,
+              name: `בוט ${Math.floor(Math.random()*100)}`,
+              score: 0,
+              drinks: 0,
+              isGroom: false,
+              isBot: true,
+              photo: `https://api.dicebear.com/9.x/avataaars/svg?seed=${Date.now()}`
+           });
+
+          const newState = { ...prev, players: [...prev.players, ...bots] };
+          broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
+          return newState;
+      });
+  };
+
+  // Determine container classes based on stage
+  const isPlaying = gameState.stage === GameStage.PLAYING;
+  
+  // Full screen for PLAYING, regular container for others
+  const containerClasses = isPlaying 
+    ? "relative w-full h-screen overflow-hidden bg-black" 
+    : "relative z-10 container mx-auto px-4 py-6 min-h-screen flex flex-col";
+
   return (
-    <div className="min-h-screen bg-[#0f172a] text-slate-100 font-rubik overflow-x-hidden selection:bg-purple-500 selection:text-white" dir="rtl">
+    <div className={`min-h-screen bg-[#0f172a] text-slate-100 font-rubik selection:bg-purple-500 selection:text-white ${isPlaying ? 'overflow-hidden' : 'overflow-x-hidden'}`} dir="rtl">
       
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-pink-600/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-      </div>
+      {!isPlaying && (
+          <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+            <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-pulse"></div>
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-pink-600/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+          </div>
+      )}
 
-      <div className="relative z-10 container mx-auto px-4 py-6 min-h-screen flex flex-col">
+      <div className={containerClasses}>
         
-        <header className="flex items-center justify-between mb-4 pb-4 border-b border-slate-700/50">
-           <div className="flex items-center gap-2 text-purple-400">
-             <Sparkles className="w-5 h-5" />
-             <span className="font-bold text-lg hidden md:inline">המשחק של החתן</span>
-           </div>
-           
-           {gameState.stage !== GameStage.SETUP && (
-             <div className="flex items-center gap-4 text-xs font-medium text-slate-400">
-               <div className={`flex items-center gap-1 ${connectionStatus === 'connected' ? 'text-green-400' : 'text-red-400'}`}>
-                 <Wifi className="w-4 h-4" />
-                 <span>{connectionStatus === 'connected' ? 'מחובר' : 'מנותק'}</span>
-               </div>
-               {gameState.gameCode && <div className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700 font-mono">CODE: {gameState.gameCode}</div>}
-             </div>
-           )}
-        </header>
+        {/* Only show Header if NOT playing */}
+        {!isPlaying && (
+            <header className="flex items-center justify-between mb-4 pb-4 border-b border-slate-700/50">
+            <div className="flex items-center gap-2 text-purple-400">
+                <Sparkles className="w-5 h-5" />
+                <span className="font-bold text-lg hidden md:inline">המשחק של החתן</span>
+            </div>
+            
+            {gameState.stage !== GameStage.SETUP && (
+                <div className="flex items-center gap-4 text-xs font-medium text-slate-400">
+                <div className={`flex items-center gap-1 ${connectionStatus === 'connected' ? 'text-green-400' : 'text-red-400'}`}>
+                    <Wifi className="w-4 h-4" />
+                    <span>{connectionStatus === 'connected' ? 'מחובר' : (connectionStatus === 'connecting' ? 'מתחבר...' : 'מנותק')}</span>
+                </div>
+                {gameState.gameCode && <div className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700 font-mono">CODE: {gameState.gameCode}</div>}
+                </div>
+            )}
+            </header>
+        )}
 
-        <main className="flex-grow flex flex-col justify-center">
+        <main className={`flex-grow flex flex-col ${!isPlaying ? 'justify-center' : 'h-full'}`}>
           {error && (
-            <div className="mb-6 p-4 bg-red-900/50 border border-red-500 rounded-lg text-red-200 text-center animate-shake z-50">
-              {error}
-              <button onClick={() => setError(null)} className="mr-4 underline text-sm hover:text-white">סגור</button>
+            <div className="mb-6 p-4 bg-red-900/50 border border-red-500 rounded-lg text-red-200 text-center animate-shake z-50 flex items-center justify-between relative">
+              <span>{error}</span>
+              <button onClick={() => setError(null)} className="underline text-sm hover:text-white">סגור</button>
             </div>
           )}
 
@@ -283,7 +354,7 @@ const App: React.FC = () => {
           )}
 
           {gameState.stage === GameStage.LOBBY && (
-             <div className="text-center space-y-8 animate-fade-in w-full max-w-4xl mx-auto">
+             <div className="text-center space-y-8 animate-fade-in w-full max-w-4xl mx-auto my-auto">
                 <div className="space-y-2">
                     <h1 className="text-4xl font-black text-white">לובי המתנה</h1>
                     <p className="text-slate-400">שתפו את הקישורים כדי להתחיל</p>
@@ -323,10 +394,11 @@ const App: React.FC = () => {
                    <div className="flex flex-wrap justify-center gap-6">
                       {gameState.players.map(p => (
                         <div key={p.id} className="flex flex-col items-center gap-2 animate-pop">
-                          <div className={`relative w-16 h-16 rounded-full border-2 overflow-hidden ${p.isGroom ? 'border-yellow-500' : 'border-slate-500'}`}>
+                          <div className={`relative w-16 h-16 rounded-full border-2 overflow-hidden ${p.isGroom ? 'border-yellow-500' : 'border-slate-500'} ${p.isBot ? 'border-dashed opacity-70' : ''}`}>
                              {p.photo ? <img src={p.photo} className="w-full h-full object-cover" alt={p.name} /> : <div className={`w-full h-full flex items-center justify-center ${p.isGroom ? 'bg-yellow-900/50' : 'bg-slate-700'}`}>{p.isGroom ? <Crown className="w-8 h-8 text-yellow-400" /> : <User className="w-8 h-8 text-slate-400" />}</div>}
                           </div>
                           <span className={`text-sm font-medium ${p.isGroom ? 'text-yellow-400' : 'text-slate-300'}`}>{p.name}</span>
+                          {p.isBot && <span className="text-[10px] bg-slate-700 px-2 py-0.5 rounded-full text-slate-400 uppercase">Bot</span>}
                         </div>
                       ))}
                       {gameState.players.length === 0 && <span className="text-slate-500 italic w-full">ממתין להצטרפות...</span>}
@@ -334,11 +406,33 @@ const App: React.FC = () => {
                 </div>
 
                 {gameState.isHost ? (
-                  <button onClick={handleStartRound} disabled={gameState.players.length === 0} className="w-full md:w-auto bg-green-600 hover:bg-green-500 text-white font-bold py-4 px-12 rounded-full text-xl disabled:opacity-50 transition-all transform hover:scale-105 shadow-xl">התחל את המשחק!</button>
+                    <div className="flex flex-col items-center gap-4">
+                        <button onClick={handleStartRound} disabled={gameState.players.length === 0} className="w-full md:w-auto bg-green-600 hover:bg-green-500 text-white font-bold py-4 px-12 rounded-full text-xl disabled:opacity-50 transition-all transform hover:scale-105 shadow-xl">התחל את המשחק!</button>
+                        <button onClick={addBots} className="text-slate-500 hover:text-white text-sm flex items-center gap-2 hover:bg-white/5 px-4 py-2 rounded-full transition-colors border border-transparent hover:border-slate-600">
+                            <Bot className="w-4 h-4" /> הוסף בוט לבדיקה
+                        </button>
+                    </div>
                 ) : (
-                  <div className="flex items-center justify-center gap-2 text-blue-300 animate-pulse bg-blue-900/20 py-2 px-4 rounded-full inline-flex">
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>ממתין למארח שיתחיל...</span>
+                  <div className="flex flex-col items-center justify-center gap-4 animate-pulse mt-8">
+                     {(connectionStatus === 'connected' || connectionStatus === 'connecting') ? (
+                        <>
+                            <div className="bg-blue-900/20 text-blue-300 py-3 px-6 rounded-full inline-flex items-center gap-3">
+                                <Loader2 className="w-6 h-6 animate-spin" />
+                                <span className="text-lg font-bold">מחכים למארח שיתחיל את המשחק...</span>
+                            </div>
+                            <p className="text-slate-500 text-sm">בינתיים אפשר לשתות משהו 🍺</p>
+                        </>
+                     ) : (
+                        <div className="flex flex-col items-center gap-2">
+                             <div className="text-red-400 font-bold mb-2">הקשר נותק או לא נוצר</div>
+                             <button 
+                                onClick={() => setGameState(prev => ({ ...prev, stage: GameStage.SETUP }))}
+                                className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-full flex items-center gap-2"
+                             >
+                                 <LogOut className="w-4 h-4" /> חזור למסך הכניסה
+                             </button>
+                        </div>
+                     )}
                   </div>
                 )}
              </div>

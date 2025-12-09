@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Mission, QAPair, VideoAsset } from '../types';
 import { Video, ListTodo, PlayCircle, Loader2, Smartphone, Monitor, ArrowRight, UserPlus, Clock, Trash2, Plus, Play, Crown, Camera, Image as ImageIcon, X, Aperture, User, Save, Upload, FileJson, Sparkles, Check, GripVertical, Settings2, Timer, AlertCircle, RefreshCw, LogOut } from 'lucide-react';
@@ -352,13 +351,11 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
       setJoinName('');
       setJoinPhoto(undefined);
       setExistingId(undefined);
+      // We don't reset code so they can still join the same game
+      // But we reset mode to re-render the join form
   };
 
   const handleJoinSubmit = () => {
-      // Create ID if new, use existing if present
-      // We don't actually generate the ID here, we let PeerJS or App.tsx handle it,
-      // BUT we need to persist what we have.
-      
       const pId = existingId || `player-${Date.now()}`;
       
       // Save to localStorage
@@ -666,7 +663,6 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
 
   // --- JOIN SCREEN ---
   if (mode === 'JOIN') {
-      // (Reusing existing join screen logic for brevity, just wrapping the return)
       return (
       <div className="max-w-md mx-auto w-full px-4 pt-10">
         {showCamera && (
@@ -720,6 +716,29 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
         )}
         <div className="bg-slate-800 p-8 rounded-3xl border border-slate-700 shadow-xl space-y-6">
            <div className="text-center flex flex-col items-center">
+             
+             {/* Enhanced Reset Identity Button */}
+             {existingId && (
+                 <div className="w-full mb-6 bg-slate-700/50 p-3 rounded-xl flex items-center justify-between border border-slate-600 animate-fade-in">
+                     <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-600">
+                             {joinPhoto ? <img src={joinPhoto} className="w-full h-full object-cover" /> : <User className="w-full h-full p-1.5 text-slate-400" />}
+                        </div>
+                        <div className="text-right">
+                            <span className="text-xs text-slate-400 block">מחובר כ-</span>
+                            <span className="text-sm font-bold text-white">{joinName}</span>
+                        </div>
+                     </div>
+                     <button 
+                        onClick={clearSavedData} 
+                        className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-2 rounded-lg border border-red-500/30 flex items-center gap-1 transition-colors hover:scale-105"
+                     >
+                        <LogOut className="w-3 h-3"/>
+                        התנתק
+                     </button>
+                 </div>
+             )}
+
              <div className="relative mb-6 group cursor-pointer" onClick={async () => {
                  try {
                     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
@@ -747,12 +766,6 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                 </div>
              </div>
              <h2 className="text-2xl font-bold text-white mt-2">{isGroom ? 'כניסת חתן' : 'הצטרפות למשחק'}</h2>
-             {existingId && (
-                 <div className="flex items-center gap-2 mt-2 bg-slate-700/50 px-3 py-1 rounded-full">
-                     <span className="text-xs text-green-400">זוהה משתמש קיים</span>
-                     <button onClick={clearSavedData} className="text-xs text-slate-400 hover:text-red-400 underline"><LogOut className="w-3 h-3"/></button>
-                 </div>
-             )}
            </div>
            <div className="space-y-4">
              <div>
