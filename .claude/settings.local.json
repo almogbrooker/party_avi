@@ -19,7 +19,13 @@
       "Bash(npm install:*)",
       "Bash(npm run dev:*)",
       "Bash(brew install:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(ngrok config add-authtoken:*)",
+      "Bash(ngrok:*)",
+      "Bash(lt:*)",
+      "Bash(cloudflared:*)",
+      "Bash(chmod:*)",
+      "Bash(./start-game.sh:*)"
     ],
     "deny": [],
     "ask": []

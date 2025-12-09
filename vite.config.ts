@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
         port: 5173,
         host: '0.0.0.0',
         allowedHosts: [
+          'suspected-longest-karma-try.trycloudflare.com',
           'unlock-restaurants-poultry-received.trycloudflare.com',
           '.trycloudflare.com',
           'bachelor-party-2024.loca.lt',
