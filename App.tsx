@@ -311,7 +311,7 @@ const App: React.FC = () => {
       } else {
           alert('העתק את הקישור: ' + url);
       }
-  }
+  };
 
   const addBots = () => {
       setGameState(prev => {
