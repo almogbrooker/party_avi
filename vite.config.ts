@@ -6,17 +6,8 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
       server: {
-        port: 5173,
+        port: 3000,
         host: '0.0.0.0',
-        allowedHosts: [
-          'unlock-restaurants-poultry-received.trycloudflare.com',
-          '.trycloudflare.com',
-          'bachelor-party-2024.loca.lt',
-          '.loca.lt',
-          'localhost',
-          '192.168.105.1',
-          '10.100.102.5'
-        ]
       },
       plugins: [react()],
       define: {

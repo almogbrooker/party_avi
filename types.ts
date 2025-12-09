@@ -55,6 +55,7 @@ export interface GameState {
   groomCorrectCount: number;
   gameCode: string | null;
   isHost: boolean;
+  isPaused: boolean; // Global pause state
   
   // Real-time round state
   roundPhase: 'QUESTION' | 'GROOM_ANSWERING' | 'GROOM_WRITING' | 'VOTING' | 'REVEAL' | 'JUDGMENT' | 'CONSEQUENCE' | 'MISSION_EXECUTION' | 'VICTIM_SELECTION' | 'VICTIM_REVEAL';
