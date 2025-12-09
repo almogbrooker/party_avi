@@ -6,7 +6,7 @@ import GamePhase from './components/GamePhase';
 import SummaryPhase from './components/SummaryPhase';
 import PlayerMobileView from './components/PlayerMobileView';
 import { initializePeer, connectToHost, setOnMessage, broadcastMessage, sendMessageToHost, disconnectAll } from './services/peerService';
-import { Sparkles, Wifi, Share2, Crown, Copy, User, Loader2, Lock } from 'lucide-react';
+import { Sparkles, Wifi, Share2, Crown, Copy, User, Loader2 } from 'lucide-react';
 
 const generateGameCode = () => {
   return Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -23,6 +23,7 @@ const App: React.FC = () => {
     groomCorrectCount: 0,
     gameCode: null,
     isHost: false,
+    isPaused: false,
     roundPhase: 'QUESTION',
     currentVotes: {},
     groomResult: null,
@@ -45,7 +46,7 @@ const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     const role = params.get('role');
-
+    
     if (code) {
       setInitialJoinCode(code);
       if (role === 'groom') {
@@ -54,70 +55,32 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Prevent back navigation when game is in progress
-  useEffect(() => {
-    const handlePopState = (event: PopStateEvent) => {
-      if (gameState.stage !== GameStage.SETUP) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        window.history.pushState(null, '', window.location.pathname);
-
-        // Show warning
-        if (!window.confirm('האם אתה בטוח שברצונך לצאת מהמשחק? כל ההתקדמות תאבד!')) {
-          return;
-        }
-
-        // If confirmed, reset game
-        window.location.href = window.location.origin + window.location.pathname;
-      }
-    };
-
-    // Push initial state when game starts
-    if (gameState.stage !== GameStage.SETUP) {
-      window.history.pushState(null, '', window.location.pathname);
-      window.addEventListener('popstate', handlePopState);
-    }
-
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-    };
-  }, [gameState.stage]);
-
-  // Prevent refresh during game
-  useEffect(() => {
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (gameState.stage === GameStage.PLAYING || gameState.stage === GameStage.LOBBY) {
-        event.preventDefault();
-        event.returnValue = 'האם אתה בטוח? כל ההתקדמות תאבד!';
-        return 'האם אתה בטוח? כל ההתקדמות תאבד!';
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [gameState.stage]);
-
   useEffect(() => {
     setOnMessage((msg, conn) => {
       switch (msg.type) {
         case 'JOIN':
           if (gameState.isHost) {
-            const newPlayer: Player = {
-              id: msg.payload.id,
-              name: msg.payload.name,
-              score: 0,
-              drinks: 0,
-              isGroom: msg.payload.isGroom,
-              photo: msg.payload.photo
-            };
             setGameState(prev => {
+              // Check if player exists (reconnection)
+              const existingPlayer = prev.players.find(p => p.id === msg.payload.id);
+              
+              const newPlayer: Player = {
+                id: msg.payload.id,
+                name: msg.payload.name,
+                // Preserve score/drinks if exists, else 0
+                score: existingPlayer ? existingPlayer.score : 0,
+                drinks: existingPlayer ? existingPlayer.drinks : 0,
+                isGroom: msg.payload.isGroom,
+                photo: msg.payload.photo || existingPlayer?.photo // Update photo if provided, or keep old
+              };
+
               const filtered = prev.players.filter(p => p.id !== newPlayer.id);
+              
+              // Ensure we don't have duplicate groom if someone reconnects as groom
               const finalPlayers = msg.payload.isGroom 
                 ? filtered.filter(p => !p.isGroom) 
                 : filtered;
+              
               const newState = { ...prev, players: [...finalPlayers, newPlayer] };
               broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
               return newState;
@@ -146,7 +109,21 @@ const App: React.FC = () => {
           }
           break;
         case 'GROOM_SELECT_VICTIM':
-          // ... implementation details for victim selection if needed ...
+          if (gameState.isHost) {
+              setGameState(prev => {
+                  // Only update if we are in the correct phase or transitioning
+                  const newState: GameState = { 
+                      ...prev, 
+                      selectedVictimId: msg.payload.victimId,
+                      roundPhase: 'VICTIM_REVEAL',
+                      pastVictims: prev.pastVictims.includes(msg.payload.victimId) 
+                          ? prev.pastVictims 
+                          : [...prev.pastVictims, msg.payload.victimId]
+                  };
+                  broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
+                  return newState;
+              });
+          }
           break;
         case 'STATE_UPDATE':
           if (!gameState.isHost) {
@@ -173,7 +150,12 @@ const App: React.FC = () => {
         questions,
         missions,
         roundPhase: 'QUESTION',
-        groomAnswer: null
+        groomAnswer: null,
+        isPaused: false,
+        selectedVictimId: null,
+        roundLosers: [],
+        currentVotes: {},
+        activeMission: null
       }));
       
       setConnectionStatus('connected');
@@ -190,11 +172,17 @@ const App: React.FC = () => {
     broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
   };
 
-  const handleJoinGame = async (name: string, code: string, isGroom: boolean = false, photo?: string) => {
+  const handleJoinGame = async (name: string, code: string, isGroom: boolean = false, photo?: string, existingId?: string) => {
     setIsLoading(true);
     try {
       const conn = await connectToHost(code, { name });
-      const playerId = conn.peer;
+      
+      // If we have an existing ID (from localStorage), use it to identify ourselves to the game logic
+      // The peerId (conn.peer) is just for the network transport.
+      // Ideally, peerId should match existingId, but PeerJS doesn't guarantee ID reuse easily if connection is ghosted.
+      // So we use the payload ID as the "Game Logic ID".
+      const playerId = existingId || conn.peer;
+      
       setMyPlayerId(playerId);
       setConnectionStatus('connected');
       sendMessageToHost({ type: 'JOIN', payload: { name, id: playerId, isGroom, photo } });
@@ -219,11 +207,8 @@ const App: React.FC = () => {
   };
 
   const handleRestart = () => {
-    if (!window.confirm('לאתחל מחדש? כל התוצאות וההתקדמות יימחקו.')) {
-      return;
-    }
     disconnectAll();
-    window.location.href = window.location.origin + window.location.pathname;
+    window.location.href = window.location.origin + window.location.pathname; 
   };
 
   const generateShareLink = (role: 'player' | 'groom') => {
@@ -274,12 +259,6 @@ const App: React.FC = () => {
                  <span>{connectionStatus === 'connected' ? 'מחובר' : 'מנותק'}</span>
                </div>
                {gameState.gameCode && <div className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700 font-mono">CODE: {gameState.gameCode}</div>}
-               {(gameState.stage === GameStage.LOBBY || gameState.stage === GameStage.PLAYING) && (
-                 <div className="flex items-center gap-1 text-orange-400" title="המשחק נעול - אי אפשר לחזור">
-                   <Lock className="w-4 h-4" />
-                   <span className="hidden md:inline">נעול</span>
-                 </div>
-               )}
              </div>
            )}
         </header>
@@ -378,6 +357,7 @@ const App: React.FC = () => {
                 playerId={myPlayerId}
                 onVote={(vote) => sendMessageToHost({ type: 'VOTE', payload: { playerId: myPlayerId, vote } })}
                 onGroomAnswer={(answer) => sendMessageToHost({ type: 'GROOM_ANSWER', payload: { answer } })}
+                onSelectVictim={(victimId) => sendMessageToHost({ type: 'GROOM_SELECT_VICTIM', payload: { victimId } })}
               />
             )
           )}

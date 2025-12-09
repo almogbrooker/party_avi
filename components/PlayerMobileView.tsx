@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { GameState, Player } from '../types';
-import { ThumbsUp, ThumbsDown, Wine, PartyPopper, Hourglass, Users, Crown, User, Sword, Send } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, Wine, PartyPopper, Hourglass, Users, Crown, User, Sword, Send, PauseCircle, Hand } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface PlayerMobileViewProps {
@@ -9,15 +9,19 @@ interface PlayerMobileViewProps {
   playerId: string;
   onVote: (vote: boolean) => void;
   onGroomAnswer?: (answer: string) => void;
+  onSelectVictim?: (victimId: string) => void;
 }
 
-const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId, onVote, onGroomAnswer }) => {
+const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId, onVote, onGroomAnswer, onSelectVictim }) => {
   const [showPlayers, setShowPlayers] = useState(false);
   const [localVote, setLocalVote] = useState<boolean | null>(null);
   const [showVoteConfirm, setShowVoteConfirm] = useState(false);
   const [groomInput, setGroomInput] = useState('');
   const [answerSubmitted, setAnswerSubmitted] = useState(false);
   
+  // Flashing State for Drama
+  const [isFlashing, setIsFlashing] = useState(false);
+
   const me = gameState.players.find(p => p.id === playerId);
   const isGroom = me?.isGroom;
 
@@ -41,9 +45,13 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
         setGroomInput('');
         setAnswerSubmitted(false);
     }
+    
+    // Reset flashing
+    setIsFlashing(false);
+
   }, [gameState.roundPhase]);
 
-  // Trigger confetti
+  // Trigger confetti or vibrate
   useEffect(() => {
     // Confetti for Players if they are safe
     if (gameState.roundPhase === 'CONSEQUENCE' && !isGroom && !roundLoser) {
@@ -53,7 +61,23 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
     if ((gameState.roundPhase === 'JUDGMENT' || gameState.roundPhase === 'CONSEQUENCE') && isGroom && groomWon) {
        confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 }, colors: ['#fbbf24', '#f59e0b'] }); // Gold confetti
     }
-  }, [gameState.roundPhase, roundLoser, isGroom, groomWon]);
+    
+    // RED SCREEN FLASH / VIBRATE FOR VICTIM
+    if (gameState.roundPhase === 'VICTIM_REVEAL' && gameState.selectedVictimId === playerId) {
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
+    }
+
+    // FLASHING FOR LOSERS WHO ARE NOT YET REVEALED
+    // If I am a loser, and it's VICTIM_REVEAL, and I am NOT the victim: Flash for drama
+    // (This simulates the roulette "passing over" them)
+    if (gameState.roundPhase === 'VICTIM_REVEAL' && roundLoser && gameState.selectedVictimId !== playerId) {
+        // Flash for 2 seconds then stop
+        setIsFlashing(true);
+        const timer = setTimeout(() => setIsFlashing(false), 2500);
+        return () => clearTimeout(timer);
+    }
+
+  }, [gameState.roundPhase, roundLoser, isGroom, groomWon, gameState.selectedVictimId, playerId]);
 
   const handleVote = (vote: boolean) => {
     if (hasVoted) return; // Already voted
@@ -80,7 +104,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
       if (gameState.roundPhase === 'VOTING') {
           return gameState.currentVotes[p.id] !== undefined ? 'הצביע' : 'חושב...';
       }
-      if (gameState.roundPhase === 'JUDGMENT' || gameState.roundPhase === 'CONSEQUENCE' || gameState.roundPhase === 'MISSION_EXECUTION') {
+      if (gameState.roundPhase === 'JUDGMENT' || gameState.roundPhase === 'CONSEQUENCE' || gameState.roundPhase === 'VICTIM_SELECTION' || gameState.roundPhase === 'VICTIM_REVEAL' || gameState.roundPhase === 'MISSION_EXECUTION') {
           return gameState.roundLosers.includes(p.id) ? 'שותה!' : 'ניצל';
       }
       return 'ממתין';
@@ -97,8 +121,42 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
 
   if (!me) return <div className="p-4 text-center">טוען...</div>;
 
+  // RED SCREEN EFFECT FOR VICTIM (IMMEDIATE)
+  if (gameState.roundPhase === 'VICTIM_REVEAL' && gameState.selectedVictimId === playerId) {
+      return (
+          <div className="fixed inset-0 bg-red-600 flex flex-col items-center justify-center text-center p-6 animate-pulse z-50">
+              <Sword className="w-32 h-32 text-black mb-8 animate-bounce" />
+              <h1 className="text-6xl font-black text-black mb-4">זה אתה!</h1>
+              <p className="text-2xl font-bold text-white">נבחרת לבצע את המשימה!</p>
+              <div className="mt-8 text-black font-mono text-sm">בהצלחה...</div>
+          </div>
+      );
+  }
+
+  // FLASHING DRAMA EFFECT FOR OTHER LOSERS
+  if (isFlashing) {
+      return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center animate-[pulse_0.1s_ease-in-out_infinite] bg-white">
+              <div className="text-center">
+                   <h1 className="text-6xl font-black text-black">???</h1>
+                   <p className="text-2xl font-bold text-black mt-4">מי נבחר?!</p>
+              </div>
+          </div>
+      );
+  }
+
   return (
     <div className={`min-h-screen ${isGroom ? 'bg-slate-900 border-x-4 border-yellow-600/30' : 'bg-slate-900'} text-white flex flex-col p-4`}>
+      
+      {/* PAUSE OVERLAY FOR PLAYERS */}
+      {gameState.isPaused && (
+          <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+               <PauseCircle className="w-20 h-20 text-orange-500 mb-6 animate-pulse" />
+               <h2 className="text-3xl font-black text-white mb-2">הפסקה!</h2>
+               <p className="text-slate-400">המשחק נעצר כרגע.<br/>נחזור לשחק בקרוב...</p>
+          </div>
+      )}
+
       {/* Header */}
       <div className={`flex justify-between items-center mb-6 p-3 rounded-xl border shadow-lg relative z-20 ${isGroom ? 'bg-gradient-to-r from-slate-800 to-slate-900 border-yellow-500/50' : 'bg-slate-800 border-slate-700'}`}>
         <div className="flex items-center gap-3">
@@ -264,6 +322,45 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                         )}
                     </div>
                 )}
+
+                {/* GROOM SELECTION MODE */}
+                {gameState.roundPhase === 'VICTIM_SELECTION' && (
+                    <div className="animate-fade-in space-y-6">
+                         <div className="text-center">
+                            <Hand className="w-16 h-16 text-red-500 mx-auto mb-2 animate-bounce" />
+                            <h2 className="text-2xl font-bold text-white">בחר קורבן</h2>
+                            <p className="text-slate-400">מי יבצע את המשימה איתך?</p>
+                         </div>
+                         
+                         <div className="grid grid-cols-2 gap-4">
+                             {gameState.roundLosers.map(loserId => {
+                                 const p = gameState.players.find(pl => pl.id === loserId);
+                                 if (!p) return null;
+                                 const isAlreadyVictim = gameState.pastVictims.includes(loserId);
+                                 
+                                 return (
+                                     <button 
+                                        key={loserId}
+                                        onClick={() => onSelectVictim && onSelectVictim(loserId)}
+                                        className="bg-slate-800 border-2 border-slate-700 hover:border-red-500 p-4 rounded-xl flex flex-col items-center gap-2 active:scale-95 transition-all"
+                                     >
+                                         <div className="relative w-16 h-16 rounded-full overflow-hidden bg-slate-700">
+                                            {p.photo ? <img src={p.photo} className="w-full h-full object-cover" /> : <User className="w-full h-full p-3 text-slate-400"/>}
+                                            {isAlreadyVictim && (
+                                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                                    <span className="text-xs font-bold text-red-400">כבר<br/>נבחר</span>
+                                                </div>
+                                            )}
+                                         </div>
+                                         <span className="font-bold text-sm">{p.name}</span>
+                                     </button>
+                                 )
+                             })}
+                             {gameState.roundLosers.length === 0 && <p className="col-span-2 text-center text-slate-500">אין לוזרים בסיבוב הזה...</p>}
+                         </div>
+                    </div>
+                )}
+
                 {gameState.roundPhase === 'MISSION_EXECUTION' && (
                     <div className="animate-bounce">
                          <div className="text-6xl mb-4">⚔️</div>
@@ -377,6 +474,31 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                     </div>
                     )}
                 </div>
+                )}
+
+                {gameState.roundPhase === 'VICTIM_SELECTION' && (
+                    <div className="text-center p-8 bg-slate-800/50 rounded-3xl animate-pulse">
+                        <Users className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                        <h2 className="text-2xl font-bold text-white">החתן בוחר קורבן...</h2>
+                        <p className="text-slate-400">מתח...</p>
+                    </div>
+                )}
+
+                {gameState.roundPhase === 'VICTIM_REVEAL' && gameState.selectedVictimId !== playerId && (
+                     <div className="text-center p-8 bg-slate-800 rounded-3xl animate-pop border border-slate-700">
+                        {isFlashing ? (
+                            <div className="text-yellow-400 animate-pulse">
+                                <h2 className="text-3xl font-black mb-2">???</h2>
+                                <p>בודק תוצאות...</p>
+                            </div>
+                        ) : (
+                            <>
+                                <p className="text-red-300 font-bold mb-4 uppercase">הקורבן הנבחר הוא</p>
+                                <h2 className="text-3xl font-black text-white mb-2">{gameState.players.find(p => p.id === gameState.selectedVictimId)?.name}</h2>
+                                <div className="text-2xl font-bold text-green-400 mt-4 border-2 border-green-500 p-2 rounded-xl">ניצלת!</div>
+                            </>
+                        )}
+                     </div>
                 )}
 
                 {gameState.roundPhase === 'MISSION_EXECUTION' && (

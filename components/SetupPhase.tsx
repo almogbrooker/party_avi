@@ -1,12 +1,12 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Mission, QAPair, VideoAsset } from '../types';
-import { Video, ListTodo, PlayCircle, Loader2, Smartphone, Monitor, ArrowRight, UserPlus, Clock, Trash2, Plus, Play, Crown, Camera, Image as ImageIcon, X, Aperture, User, Save, Upload, FileJson, Sparkles, Check, GripVertical, Settings2, Timer, AlertCircle } from 'lucide-react';
+import { Video, ListTodo, PlayCircle, Loader2, Smartphone, Monitor, ArrowRight, UserPlus, Clock, Trash2, Plus, Play, Crown, Camera, Image as ImageIcon, X, Aperture, User, Save, Upload, FileJson, Sparkles, Check, GripVertical, Settings2, Timer, AlertCircle, RefreshCw, LogOut } from 'lucide-react';
 import { analyzeVideoForQA } from '../services/geminiService';
 
 interface SetupPhaseProps {
   onHostGame: (videos: Record<string, File>, missions: Mission[], questions: QAPair[]) => void;
-  onJoinGame: (name: string, code: string, isGroom?: boolean, photo?: string) => void;
+  onJoinGame: (name: string, code: string, isGroom?: boolean, photo?: string, existingId?: string) => void;
   isLoading: boolean;
   isJoining: boolean;
   initialCode?: string;
@@ -32,6 +32,8 @@ const PREDEFINED_MISSIONS = [
   "להוריד חולצה"
 ];
 
+const STORAGE_KEY = 'bachelor_party_player_v1';
+
 const SetupPhase: React.FC<SetupPhaseProps> = ({ 
     onHostGame, 
     onJoinGame, 
@@ -45,6 +47,7 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
   
   // HOST STATE
   const [videoAssets, setVideoAssets] = useState<VideoAsset[]>([]);
+  const [pendingVideoIds, setPendingVideoIds] = useState<string[]>([]); // IDs from JSON that need files
   const [questions, setQuestions] = useState<QAPair[]>([]);
   const [missions, setMissions] = useState<Mission[]>([
     { id: 'm1', text: 'לרקוד עם הכסא דקה שלמה בחושניות' },
@@ -66,11 +69,28 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
   const [joinCode, setJoinCode] = useState(initialCode);
   const [isGroom, setIsGroom] = useState(initialRole === 'GROOM');
   const [joinPhoto, setJoinPhoto] = useState<string | undefined>(undefined);
+  const [existingId, setExistingId] = useState<string | undefined>(undefined);
   
   // CAMERA STATE
   const [showCamera, setShowCamera] = useState(false);
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
+  // Load from LocalStorage on mount
+  useEffect(() => {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            const data = JSON.parse(saved);
+            if (data.name) setJoinName(data.name);
+            if (data.photo) setJoinPhoto(data.photo);
+            if (data.id) setExistingId(data.id);
+            // Don't auto-set code, as user might be joining a new game
+        }
+    } catch (e) {
+        console.error("Failed to load saved player data", e);
+    }
+  }, []);
 
   // Auto-switch to join mode if code is provided
   useEffect(() => {
@@ -93,7 +113,7 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
 
   // Timer for analysis
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: any;
     if (analyzingVideoId) {
         setElapsedTime(0);
         interval = setInterval(() => {
@@ -148,6 +168,25 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
           setElapsedTime(0);
       }
     }
+    // Reset input
+    e.target.value = '';
+  };
+
+  const handlePendingVideoUpload = (e: React.ChangeEvent<HTMLInputElement>, targetId: string) => {
+    if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        
+        const newAsset: VideoAsset = {
+            id: targetId, // Use the ID from the pending list (from JSON)
+            file: file,
+            name: file.name
+        };
+
+        setVideoAssets(prev => [...prev, newAsset]);
+        setPendingVideoIds(prev => prev.filter(id => id !== targetId));
+        setActiveVideoId(targetId);
+    }
+    e.target.value = '';
   };
 
   const removeVideo = (id: string) => {
@@ -274,21 +313,63 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
         reader.onload = (event) => {
             try {
                 const config = JSON.parse(event.target?.result as string);
-                if (config.questions) setQuestions(config.questions);
+                
+                let loadedQuestions: QAPair[] = [];
+                if (config.questions) {
+                    loadedQuestions = config.questions;
+                    setQuestions(loadedQuestions);
+                }
+                
                 if (config.missions) setMissions(config.missions);
-                alert("הגדרות נטענו! כעת העלה את הסרטונים המתאימים.");
+
+                // Calculate missing videos
+                const requiredVideoIds = Array.from(new Set(loadedQuestions.map(q => q.videoId)));
+                const existingVideoIds = videoAssets.map(v => v.id);
+                const missing = requiredVideoIds.filter(id => !existingVideoIds.includes(id));
+                
+                setPendingVideoIds(missing);
+
+                alert(missing.length > 0 
+                    ? "הגדרות נטענו! כעת עליך לחבר את קבצי הוידאו המתאימים ברשימה." 
+                    : "הגדרות נטענו בהצלחה!");
             } catch (err) {
                 alert("קובץ לא תקין");
             }
         };
         reader.readAsText(file);
     }
+    e.target.value = '';
   };
 
   const formatTime = (seconds: number): string => {
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const clearSavedData = () => {
+      localStorage.removeItem(STORAGE_KEY);
+      setJoinName('');
+      setJoinPhoto(undefined);
+      setExistingId(undefined);
+  };
+
+  const handleJoinSubmit = () => {
+      // Create ID if new, use existing if present
+      // We don't actually generate the ID here, we let PeerJS or App.tsx handle it,
+      // BUT we need to persist what we have.
+      
+      const pId = existingId || `player-${Date.now()}`;
+      
+      // Save to localStorage
+      const userData = {
+          id: pId,
+          name: joinName,
+          photo: joinPhoto
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
+      
+      onJoinGame(joinName, joinCode, isGroom, joinPhoto, pId);
   };
 
   // ---------------- RENDER HELPERS ----------------
@@ -308,6 +389,7 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
           </div>
           
           <div className="space-y-2">
+              {/* Existing Videos */}
               {videoAssets.map((video, index) => (
                   <div 
                     key={video.id} 
@@ -341,7 +423,24 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                       )}
                   </div>
               ))}
-              {videoAssets.length === 0 && (
+
+              {/* Pending Videos from JSON */}
+              {pendingVideoIds.map((pid, index) => (
+                   <div key={pid} className="p-3 rounded-lg border border-yellow-600/50 bg-yellow-900/20 flex flex-col gap-2">
+                        <div className="flex items-center gap-2 text-yellow-400 text-sm font-bold">
+                            <AlertCircle className="w-4 h-4" />
+                            <span>חסר מקור וידאו ({pid.substring(0,6)}...)</span>
+                        </div>
+                        <p className="text-xs text-slate-400">יש שאלות בקובץ שנטען, אך חסר להן קובץ וידאו.</p>
+                        <label className="cursor-pointer bg-yellow-600 hover:bg-yellow-500 text-black text-xs font-bold py-2 rounded text-center flex items-center justify-center gap-2">
+                            <Upload className="w-3 h-3" />
+                            העלה קובץ עבור מקור זה
+                            <input type="file" accept="video/*" className="hidden" onChange={(e) => handlePendingVideoUpload(e, pid)} />
+                        </label>
+                   </div>
+              ))}
+
+              {videoAssets.length === 0 && pendingVideoIds.length === 0 && (
                   <div className="text-center p-8 border-2 border-dashed border-slate-700 rounded-xl text-slate-500">
                       אין סרטונים. העלה סרטון ראשון כדי להתחיל.
                   </div>
@@ -371,7 +470,7 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
       if (!activeVideoId || !activeVideo) {
           return (
               <div className="flex flex-col items-center justify-center h-full text-slate-500 min-h-[400px]">
-                  <FilmIcon className="w-16 h-16 mb-4 opacity-20" />
+                  <Video className="w-16 h-16 mb-4 opacity-20" />
                   <p>בחר סרטון מהרשימה בצד ימין כדי לערוך</p>
               </div>
           );
@@ -648,6 +747,12 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                 </div>
              </div>
              <h2 className="text-2xl font-bold text-white mt-2">{isGroom ? 'כניסת חתן' : 'הצטרפות למשחק'}</h2>
+             {existingId && (
+                 <div className="flex items-center gap-2 mt-2 bg-slate-700/50 px-3 py-1 rounded-full">
+                     <span className="text-xs text-green-400">זוהה משתמש קיים</span>
+                     <button onClick={clearSavedData} className="text-xs text-slate-400 hover:text-red-400 underline"><LogOut className="w-3 h-3"/></button>
+                 </div>
+             )}
            </div>
            <div className="space-y-4">
              <div>
@@ -659,8 +764,8 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                <input type="text" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} readOnly={!!initialCode} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-center font-mono text-lg" placeholder="ABCD" maxLength={6} />
              </div>
            </div>
-           <button onClick={() => onJoinGame(joinName, joinCode, isGroom, joinPhoto)} disabled={!joinName || !joinCode} className={`w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg ${isGroom ? 'bg-gradient-to-r from-yellow-600 to-orange-600' : 'bg-blue-600 hover:bg-blue-500'}`}>
-             {isGroom ? 'אני מוכן!' : 'הכנס למשחק'}
+           <button onClick={handleJoinSubmit} disabled={!joinName || !joinCode} className={`w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg ${isGroom ? 'bg-gradient-to-r from-yellow-600 to-orange-600' : 'bg-blue-600 hover:bg-blue-500'}`}>
+             {isGroom ? 'אני מוכן!' : (existingId ? 'התחבר מחדש' : 'הכנס למשחק')}
            </button>
         </div>
       </div>
