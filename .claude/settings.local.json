@@ -4,10 +4,21 @@
       "Bash(pkill:*)",
       "Bash(git stash push:*)",
       "Bash(git stash:*)",
+<<<<<<< Updated upstream
       "Bash(git merge:*)",
       "Bash(git checkout:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)"
+=======
+      "Bash(awk:*)",
+      "Bash(xargs kill:*)",
+      "Bash(npm run dev)",
+      "Bash(chmod:*)",
+      "Bash(./start-game.sh:*)",
+      "Bash(curl:*)",
+      "Bash(./start-game-simple.sh:*)",
+      "Bash(git fetch:*)"
+>>>>>>> Stashed changes
     ],
     "deny": [],
     "ask": []

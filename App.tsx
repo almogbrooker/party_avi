@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { GameState, GameStage, Player, Mission, QAPair } from './types';
 import SetupPhase from './components/SetupPhase';
 import GamePhase from './components/GamePhase';
@@ -141,6 +141,17 @@ const App: React.FC = () => {
       const code = generateGameCode();
       await initializePeer(code);
       
+      // Add host as a player by default
+      const hostPlayer: Player = {
+          id: 'host-player',
+          name: 'המארח',
+          score: 0,
+          drinks: 0,
+          isGroom: false, // Will be set to groom if no one else joins as groom
+          isBot: false
+      };
+
+      setMyPlayerId('host-player');
       setGameState(prev => ({
         ...prev,
         stage: GameStage.LOBBY,
@@ -155,7 +166,8 @@ const App: React.FC = () => {
         selectedVictimId: null,
         roundLosers: [],
         currentVotes: {},
-        activeMission: null
+        activeMission: null,
+        players: [hostPlayer]
       }));
       
       setConnectionStatus('connected');
@@ -167,7 +179,21 @@ const App: React.FC = () => {
   };
 
   const handleStartRound = () => {
-    const newState = { stage: GameStage.PLAYING };
+    // Ensure there's a groom when starting the game
+    const hasGroom = gameState.players.some(p => p.isGroom);
+    let updatedPlayers = gameState.players;
+
+    if (!hasGroom && gameState.players.length > 0) {
+        // If no groom exists, make the host the groom
+        updatedPlayers = gameState.players.map(p =>
+            p.id === myPlayerId ? { ...p, isGroom: true } : p
+        );
+    }
+
+    const newState = {
+        stage: GameStage.PLAYING,
+        players: updatedPlayers
+    };
     setGameState(prev => ({ ...prev, ...newState }));
     broadcastMessage({ type: 'STATE_UPDATE', payload: newState });
   };
@@ -317,9 +343,15 @@ const App: React.FC = () => {
   // Determine container classes based on stage
   const isPlaying = gameState.stage === GameStage.PLAYING;
   
+  // Check if current player is the groom - memoize for performance
+  const isCurrentPlayerGroom = useMemo(() =>
+    gameState.players.find(p => p.id === myPlayerId)?.isGroom || false,
+    [gameState.players, myPlayerId]
+  );
+
   // Full screen for PLAYING, regular container for others
-  const containerClasses = isPlaying 
-    ? "relative w-full h-screen overflow-hidden bg-black" 
+  const containerClasses = isPlaying
+    ? "relative w-full h-screen overflow-hidden bg-black"
     : "relative z-10 container mx-auto px-4 py-6 min-h-screen flex flex-col";
 
   return (
@@ -459,14 +491,14 @@ const App: React.FC = () => {
           )}
 
           {gameState.stage === GameStage.PLAYING && (
-            gameState.isHost ? (
-              <GamePhase 
+            gameState.isHost || isCurrentPlayerGroom ? (
+              <GamePhase
                 gameState={gameState}
                 onUpdateState={handleHostUpdateState}
                 onGameEnd={handleGameEnd}
               />
             ) : (
-              <PlayerMobileView 
+              <PlayerMobileView
                 gameState={gameState}
                 playerId={myPlayerId}
                 onVote={(vote) => sendMessageToHost({ type: 'VOTE', payload: { playerId: myPlayerId, vote } })}

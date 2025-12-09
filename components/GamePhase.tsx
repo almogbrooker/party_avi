@@ -12,8 +12,25 @@ interface GamePhaseProps {
 const AMBIENT_MUSIC_URL = "https://assets.mixkit.co/music/preview/mixkit-game-show-suspense-942.mp3"; // Placeholder
 const SUSPENSE_MUSIC_URL = "https://assets.mixkit.co/music/preview/mixkit-ticking-clock-suspense-2775.mp3"; // Placeholder
 
+// Additional sound effects
+const CORRECT_ANSWER_URL = "https://assets.mixkit.co/sfx/preview/mixkit-achievement-bell-600.mp3";
+const WRONG_ANSWER_URL = "https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-946.mp3";
+const VICTIM_SELECTED_URL = "https://assets.mixkit.co/sfx/preview/mixkit-ominous-drums-227.mp3";
+const MISSION_COMPLETE_URL = "https://assets.mixkit.co/sfx/preview/mixkit-success-fanfare-trumpets-618.mp3";
+const COUNTDOWN_TICK_URL = "https://assets.mixkit.co/sfx/preview/mixkit-clock-ticking-976.mp3";
+
 const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameEnd }) => {
-  const { 
+  // Helper function to play sound with lazy loading
+  const playSound = (ref: React.MutableRefObject<HTMLAudioElement | null>, url: string, volume: number = 0.5) => {
+    if (!isMusicOn) return;
+    if (!ref.current) {
+      ref.current = new Audio(url);
+      ref.current.volume = volume;
+    }
+    ref.current.play().catch(() => {});
+  };
+
+  const {
     players, 
     questions, 
     currentQuestionIndex, 
@@ -35,6 +52,11 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
   const suspenseAudioRef = useRef<HTMLAudioElement | null>(null);
   const tickAudioRef = useRef<HTMLAudioElement | null>(null);
   const boomAudioRef = useRef<HTMLAudioElement | null>(null);
+  const correctAnswerRef = useRef<HTMLAudioElement | null>(null);
+  const wrongAnswerRef = useRef<HTMLAudioElement | null>(null);
+  const victimSelectedRef = useRef<HTMLAudioElement | null>(null);
+  const missionCompleteRef = useRef<HTMLAudioElement | null>(null);
+  const countdownTickRef = useRef<HTMLAudioElement | null>(null);
   
   const [isMusicOn, setIsMusicOn] = useState(true);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -46,19 +68,28 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
 
   // --- AUDIO MANAGEMENT ---
   useEffect(() => {
-      // Initialize Audio Objects
+      // Initialize Audio Objects only if music is on
+      if (!isMusicOn) return;
+
+      // Lazy load audio to improve performance
       if (!ambientAudioRef.current) {
           ambientAudioRef.current = new Audio(AMBIENT_MUSIC_URL);
           ambientAudioRef.current.loop = true;
-          ambientAudioRef.current.volume = 0.1; // Low volume for ambient
+          ambientAudioRef.current.volume = 0.1;
       }
       if (!suspenseAudioRef.current) {
           suspenseAudioRef.current = new Audio(SUSPENSE_MUSIC_URL);
           suspenseAudioRef.current.loop = true;
-          suspenseAudioRef.current.volume = 0.3; // Higher volume for suspense
+          suspenseAudioRef.current.volume = 0.3;
       }
-      if (!tickAudioRef.current) tickAudioRef.current = new Audio("https://assets.mixkit.co/sfx/preview/mixkit-game-ball-tap-2073.mp3");
-      if (!boomAudioRef.current) boomAudioRef.current = new Audio("https://assets.mixkit.co/sfx/preview/mixkit-fuel-explosion-1705.mp3");
+
+      // Load other sounds on demand
+      const loadSound = (ref: React.MutableRefObject<HTMLAudioElement | null>, url: string, volume: number = 0.5) => {
+          if (!ref.current) {
+              ref.current = new Audio(url);
+              ref.current.volume = volume;
+          }
+      };
 
       const ambient = ambientAudioRef.current;
       const suspense = suspenseAudioRef.current;
@@ -210,6 +241,11 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
       if ((roundPhase === 'GROOM_ANSWERING' || roundPhase === 'VOTING') && !isPaused) {
           interval = setInterval(() => {
               setTimeLeft(prev => {
+                  // Play tick sound when time is running out (last 5 seconds)
+                  if (prev <= 5 && prev > 1) {
+                      playSound(countdownTickRef, COUNTDOWN_TICK_URL, 0.3);
+                  }
+
                   if (prev <= 1) {
                       clearInterval(interval);
                       handleTimerComplete();
@@ -271,18 +307,15 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                   setIsRouletteSpinning(false);
                   const victimIndex = roundLosers.findIndex(id => id === selectedVictimId);
                   setRouletteIndex(victimIndex !== -1 ? victimIndex : 0);
-                  
-                  if (boomAudioRef.current && isMusicOn) {
-                      boomAudioRef.current.play().catch(() => {});
-                  }
+
+                  playSound(boomAudioRef, "https://assets.mixkit.co/sfx/preview/mixkit-fuel-explosion-1705.mp3", 0.4);
+                  playSound(victimSelectedRef, VICTIM_SELECTED_URL, 0.6);
               }
           };
           spin();
       } else if (roundPhase === 'VICTIM_REVEAL') {
           // Single loser or logic fallback
-          if (boomAudioRef.current && isMusicOn) {
-               boomAudioRef.current.play().catch(() => {});
-          }
+          playSound(boomAudioRef, "https://assets.mixkit.co/sfx/preview/mixkit-fuel-explosion-1705.mp3", 0.4);
       }
   }, [roundPhase, roundLosers, selectedVictimId]);
 
@@ -326,6 +359,13 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
     // Determine next phase
     const nextPhase = losers.length > 0 ? 'VICTIM_SELECTION' : 'CONSEQUENCE';
 
+    // Play sound effect based on judgment
+    if (isCorrect) {
+        playSound(correctAnswerRef, CORRECT_ANSWER_URL, 0.5);
+    } else if (!isCorrect) {
+        playSound(wrongAnswerRef, WRONG_ANSWER_URL, 0.4);
+    }
+
     onUpdateState({
         groomResult: isCorrect,
         players: updatedPlayers,
@@ -336,6 +376,9 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
   };
 
   const nextQuestion = () => {
+    // Play mission complete sound
+    playSound(missionCompleteRef, MISSION_COMPLETE_URL, 0.5);
+
     if (currentQuestionIndex + 1 < questions.length) {
       onUpdateState({
         currentQuestionIndex: currentQuestionIndex + 1,
@@ -415,7 +458,7 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
               <div className="relative w-full h-full overflow-hidden">
                   <video 
                     ref={videoRef}
-                    className={`w-full h-full object-contain transition-all duration-1000 ${roundPhase === 'GROOM_ANSWERING' || roundPhase === 'VOTING' ? 'opacity-20 blur-xl scale-110' : 'opacity-100 scale-100'}`}
+                    className={`w-full h-full object-cover transition-all duration-1000 ${roundPhase === 'GROOM_ANSWERING' || roundPhase === 'VOTING' ? 'opacity-20 blur-xl scale-110' : 'opacity-100 scale-100'}`}
                     onTimeUpdate={handleTimeUpdate}
                     playsInline
                   />

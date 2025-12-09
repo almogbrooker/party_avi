@@ -24,6 +24,20 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
   const me = gameState.players.find(p => p.id === playerId);
   const isGroom = me?.isGroom;
 
+  
+  // Focus input when groom needs to answer
+  useEffect(() => {
+    if (isGroom && gameState.roundPhase === 'GROOM_ANSWERING' && !answerSubmitted) {
+      const timer = setTimeout(() => {
+        const input = document.querySelector('input[placeholder="הקלד תשובה כאן..."]') as HTMLInputElement;
+        if (input) {
+          input.focus();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState.roundPhase, isGroom, answerSubmitted]);
+
   // We prefer the server state, but fall back to local for immediate feedback
   const serverVote = gameState.currentVotes[playerId];
   const myVote = serverVote !== undefined ? serverVote : (localVote !== null ? localVote : undefined);
@@ -251,7 +265,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                     </div>
                 )}
                  {gameState.roundPhase === 'GROOM_ANSWERING' && (
-                    <div className="w-full flex flex-col items-center">
+                    <div key={`groom-answering-${gameState.currentQuestionIndex}`} className="w-full flex flex-col items-center">
                         <div className="text-6xl mb-4">🎤</div>
                         <h2 className="text-2xl font-bold text-yellow-400 mb-2">מה התשובה שלך?</h2>
                         <p className="text-slate-400 mb-6">הסבר לחברים וכתוב בקצרה:</p>
