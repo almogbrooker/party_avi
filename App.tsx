@@ -260,14 +260,6 @@ const App: React.FC = () => {
     window.location.href = window.location.origin + window.location.pathname; 
   };
 
-  const ensureHttps = (url: string) => {
-    // If it's a local IP without protocol, add https://
-    if (url.startsWith('192.168.') || url.startsWith('10.') || url.startsWith('172.')) {
-      return `https://${url}`;
-    }
-    return url;
-  };
-
   const generateShareLink = (role: 'player' | 'groom') => {
     // Store the tunnel URL when first accessed from a tunnel
     const storageKey = 'tunnel_url';
@@ -275,7 +267,7 @@ const App: React.FC = () => {
     let baseUrl = window.location.origin + window.location.pathname;
 
     // If currently accessing through a tunnel, store it
-    if (currentHost.includes('trycloudflare.com') || currentHost.includes('ngrok') || currentHost.includes('loca.lt') || !currentHost.includes('localhost')) {
+    if (currentHost.includes('trycloudflare.com') || currentHost.includes('ngrok') || !currentHost.includes('localhost')) {
       localStorage.setItem(storageKey, baseUrl);
     }
     // If accessing through localhost, try to get stored tunnel URL
@@ -291,16 +283,16 @@ const App: React.FC = () => {
     }
 
     let url = `${baseUrl}?code=${gameState.gameCode}`;
-    if (role === 'groom') url += `&role=groom';
-    return ensureHttps(url);
+    if (role === 'groom') url += `&role=groom`;
+    return url;
   };
 
   const shareToWhatsapp = (role: 'player' | 'groom') => {
     const url = generateShareLink(role);
     const text = role === 'groom'
-      ? `היי חתן! 🎉\n\nכנס למשחק שלנו כאן:\n${url}`
-      : `יאללה כולם להיכנס למשחק! 🎮\n\nהקוד הוא: ${gameState.gameCode}\n\nלחצו כאן להיכנס:\n${url}\n\nאו היכנסו ידנית עם הקוד`;
-
+      ? `היי חתן!\n\nכנס למשחק שלנו כאן:\n${url}`
+      : `יאללה כולם להיכנס למשחק!\n\nהקוד הוא: ${gameState.gameCode}\n\nאו לחצו כאן:\n${url}`;
+    
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -311,7 +303,7 @@ const App: React.FC = () => {
       } else {
           alert('העתק את הקישור: ' + url);
       }
-  };
+  }
 
   const addBots = () => {
       setGameState(prev => {
