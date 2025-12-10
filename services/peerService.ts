@@ -101,16 +101,18 @@ export const initializePeer = async (id?: string): Promise<string> => {
     }
 
     console.log('🚀 Initializing PeerJS with ID:', id || '[auto-generated]');
+    console.log('🔧 PeerJS config:', BASE_PEER_OPTIONS);
 
     // Create a new ID if not provided (Host), or use provided ID
     const newPeer = new Peer(id, BASE_PEER_OPTIONS);
+    console.log('📡 Peer instance created');
     let settled = false;
     const openTimeout = setTimeout(() => {
       if (settled) return;
       settled = true;
       try { newPeer.destroy(); } catch (e) { console.error('Failed to destroy timed-out host peer', e); }
       reject(new Error('PeerJS initialization timed out. Make sure the PeerJS server is running on port 9001.'));
-    }, 25000); // Increased to 25 seconds
+    }, 10000); // Reduced to 10 seconds
 
     newPeer.on('open', (peerId: string) => {
       console.log('My peer ID is: ' + peerId);
