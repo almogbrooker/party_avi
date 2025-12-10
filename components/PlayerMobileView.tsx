@@ -17,12 +17,37 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
   const [showVoteConfirm, setShowVoteConfirm] = useState(false);
   const [groomInput, setGroomInput] = useState('');
   const [answerSubmitted, setAnswerSubmitted] = useState(false);
-  
+
   // Flashing State for Drama
   const [isFlashing, setIsFlashing] = useState(false);
 
   const me = gameState.players.find(p => p.id === playerId);
   const isGroom = me?.isGroom;
+
+  // Debug logs
+  console.log('📱 PlayerMobileView:', {
+    stage: gameState.stage,
+    roundPhase: gameState.roundPhase,
+    playerId: playerId,
+    playerName: me?.name || 'NOT FOUND',
+    isGroom,
+    isHost: gameState.isHost,
+    playersCount: gameState.players.length,
+    currentQuestionIndex: gameState.currentQuestionIndex,
+    hasCurrentQuestion: !!gameState.currentQuestion,
+    groomAnswer: gameState.groomAnswer ? '[SET]' : '[NOT SET]',
+    answerSubmitted,
+    localVote,
+    currentVotes: Object.keys(gameState.currentVotes || {}),
+    roundLosers: gameState.roundLosers,
+    selectedVictim: gameState.selectedVictimId
+  });
+
+  // Alert if groom is detected
+  if (isGroom) {
+    console.warn('🔥 GROOM DETECTED! Round phase:', gameState.roundPhase);
+    console.warn('🔥 Should show answering interface for phase GROOM_ANSWERING');
+  }
 
   
   // Focus input when groom needs to answer
@@ -94,11 +119,18 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
 
   const handleVote = (vote: boolean) => {
     if (hasVoted) return; // Already voted
-    
+
+    console.log('🗳️ Player voting:', {
+      playerId,
+      playerName: me?.name,
+      vote: vote ? 'AGREE' : 'DISAGREE',
+      hasVoted: hasVoted
+    });
+
     setLocalVote(vote);
     onVote(vote);
     setShowVoteConfirm(true);
-    
+
     // Haptic feedback if available
     if (navigator.vibrate) {
       navigator.vibrate(50);
@@ -107,6 +139,13 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
 
   const handleGroomSubmit = () => {
       if (groomInput.trim() && onGroomAnswer) {
+          console.log('💒 Groom submitting answer:', {
+            playerId,
+            playerName: me?.name,
+            answer: groomInput.trim(),
+            questionIndex: gameState.currentQuestionIndex
+          });
+
           onGroomAnswer(groomInput);
           setAnswerSubmitted(true);
       }
@@ -134,14 +173,56 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
 
   if (!me) return <div className="p-4 text-center">טוען... (נסה לרענן אם נתקע)</div>;
 
+  // Show waiting screen if still in lobby
+  if (gameState.stage === 'LOBBY') {
+    return (
+      <div className="min-h-[100dvh] w-full bg-slate-900 text-white flex flex-col items-center justify-center p-4">
+        <div className="text-center space-y-6 animate-pulse">
+          <div className="w-24 h-24 rounded-full overflow-hidden bg-slate-700 border-4 border-yellow-500/50 mx-auto">
+            {me.photo ? (
+              <img src={me.photo} alt="You" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                {isGroom ? <Crown className="w-12 h-12 text-yellow-400" /> : <User className="w-12 h-12 text-slate-400" />}
+              </div>
+            )}
+          </div>
+          <h2 className="text-3xl font-bold">
+            {isGroom ? 'החתן' : 'שחקן'}: {me.name}
+          </h2>
+          <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+            <h3 className="text-xl font-bold text-yellow-400 mb-2">מחכה להתחלת המשחק...</h3>
+            <p className="text-slate-400">המארח יתחיל את המשחק בקרוב</p>
+            {isGroom && <p className="text-yellow-500 mt-2">אל תשכח לענות על השאלות! 😉</p>}
+          </div>
+          <div className="text-slate-500 text-sm">
+            קוד המשחק: {gameState.gameCode}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // RED SCREEN EFFECT FOR VICTIM (IMMEDIATE)
   if (gameState.roundPhase === 'VICTIM_REVEAL' && gameState.selectedVictimId === playerId) {
       return (
-          <div className="fixed inset-0 bg-red-600 flex flex-col items-center justify-center text-center p-6 animate-pulse z-50">
+          <div className="fixed inset-0 bg-red-600 flex flex-col items-center justify-center text-center p-6 animate-[pulse_0.1s_ease-in-out_infinite] z-50">
               <Sword className="w-32 h-32 text-black mb-8 animate-bounce" />
               <h1 className="text-6xl font-black text-black mb-4">זה אתה!</h1>
               <p className="text-2xl font-bold text-white">נבחרת לבצע את המשימה!</p>
               <div className="mt-8 text-black font-mono text-sm">בהצלחה...</div>
+          </div>
+      );
+  }
+
+  // SAFE MESSAGE FOR NON-VICTIMS DURING VICTIM_REVEAL
+  if (gameState.roundPhase === 'VICTIM_REVEAL' && gameState.selectedVictimId !== playerId && gameState.roundLosers.includes(playerId)) {
+      return (
+          <div className="fixed inset-0 bg-green-600 flex flex-col items-center justify-center text-center p-6 z-50">
+              <PartyPopper className="w-32 h-32 text-white mb-8 animate-bounce" />
+              <h1 className="text-6xl font-black text-white mb-4">הצלחת!</h1>
+              <p className="text-3xl font-bold text-white">ניצלת הפעם</p>
+              <div className="mt-4 text-xl text-white">יש לך לחיות עוד יום...</div>
           </div>
       );
   }
@@ -268,32 +349,51 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                     <div key={`groom-answering-${gameState.currentQuestionIndex}`} className="w-full flex flex-col items-center">
                         <div className="text-6xl mb-4">🎤</div>
                         <h2 className="text-2xl font-bold text-yellow-400 mb-2">מה התשובה שלך?</h2>
-                        <p className="text-slate-400 mb-6">הסבר לחברים וכתוב בקצרה:</p>
+
+                        {/* Show the current question */}
+                        {gameState.questions && gameState.questions[gameState.currentQuestionIndex] && (
+                            <div className="w-full bg-slate-800/50 p-4 rounded-xl border border-slate-700 mb-4">
+                                <p className="text-xs text-slate-500 mb-1 text-center">השאלה:</p>
+                                <p className="text-white text-lg text-center font-medium">
+                                    {gameState.questions[gameState.currentQuestionIndex].question}
+                                </p>
+                            </div>
+                        )}
+
+                        <p className="text-slate-400 mb-4">כתוב את תשובתך:</p>
                         
                         {!answerSubmitted ? (
                             <div className="flex flex-col gap-3 w-full">
-                                <input 
-                                    type="text" 
+                                <textarea
                                     value={groomInput}
                                     onChange={(e) => setGroomInput(e.target.value)}
                                     placeholder="הקלד תשובה כאן..."
-                                    className="w-full p-4 rounded-xl bg-slate-800 border border-slate-600 text-white focus:outline-none focus:border-yellow-500 text-center text-lg"
+                                    className="w-full p-4 rounded-xl bg-slate-800 border border-slate-600 text-white focus:outline-none focus:border-yellow-500 text-center text-lg min-h-[100px] resize-none"
                                     autoFocus
+                                    dir="rtl"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && e.ctrlKey) {
+                                            handleGroomSubmit();
+                                        }
+                                    }}
                                 />
                                 <button 
                                     onClick={handleGroomSubmit}
                                     disabled={!groomInput.trim()}
-                                    className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 mt-2 shadow-lg active:scale-95 transition-transform"
+                                    className="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg active:scale-95 transition-transform"
                                 >
                                     <Send className="w-5 h-5" />
                                     שלח תשובה
                                 </button>
+                                <p className="text-xs text-slate-500 text-center mt-2">
+                                    {groomInput.length} תווים • Ctrl+Enter לשלוח מהר
+                                </p>
                             </div>
                         ) : (
                             <div className="bg-yellow-500/20 border border-yellow-500 p-6 rounded-xl animate-pop w-full">
-                                <p className="text-yellow-200 font-bold mb-2">התשובה נשלחה!</p>
-                                <p className="text-2xl text-white font-bold">"{groomInput}"</p>
-                                <p className="text-xs text-slate-400 mt-4">המתן להצבעת החברים...</p>
+                                <p className="text-yellow-200 font-bold mb-2 text-lg">✓ התשובה נשלחה!</p>
+                                <p className="text-xl text-white font-bold text-center">"{groomInput}"</p>
+                                <p className="text-xs text-slate-400 mt-4 text-center">המתן להצבעת החברים...</p>
                             </div>
                         )}
                     </div>
@@ -397,23 +497,28 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                 )}
                 
                 {gameState.roundPhase === 'GROOM_ANSWERING' && (
-                <div className="text-center space-y-6">
-                    <div className="bg-slate-800/50 p-8 rounded-full inline-block">
-                        <Crown className="w-16 h-16 text-yellow-400 animate-pulse" />
+                <div className="flex flex-col justify-center h-full space-y-6">
+                    {gameState.groomAnswer && (
+                        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+                            <p className="text-xs text-slate-500 mb-2 text-center">תשובת החתן:</p>
+                            <p className="text-white text-xl text-center font-bold">"{gameState.groomAnswer}"</p>
+                        </div>
+                    )}
+                    <div className="text-center space-y-4">
+                        <div className="text-6xl animate-pulse">⏳</div>
+                        <p className="text-slate-400">ממתין להצבעה...</p>
                     </div>
-                    <h2 className="text-2xl font-bold text-yellow-400">החתן מדבר...</h2>
-                    <p className="text-slate-400">תכף תצביע אם הוא צודק</p>
                 </div>
                 )}
 
                 {gameState.roundPhase === 'VOTING' && (
-                <div className="space-y-6 animate-fade-in w-full">
-                    <h2 className="text-2xl font-bold text-center mb-4">האם החתן צדק?</h2>
-                    
-                    <button 
+                <div className="flex flex-col h-full justify-center space-y-4 p-4">
+
+                    <div className="grid grid-cols-2 gap-4 flex-1">
+                        <button 
                     onClick={() => handleVote(true)}
                     disabled={hasVoted}
-                    className={`relative w-full p-6 rounded-2xl flex items-center justify-center gap-4 transition-all duration-300 transform overflow-hidden 
+                    className={`relative flex flex-col items-center justify-center p-8 rounded-2xl transition-all duration-300 transform flex-1 
                     ${hasVoted ? 'cursor-default' : 'cursor-pointer'}
                     ${
                         myVote === true 
@@ -427,14 +532,15 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                     {myVote === true && (
                         <div className="absolute inset-0 bg-green-400/30 animate-ping rounded-2xl" style={{ animationDuration: '0.6s', animationIterationCount: 1 }}></div>
                     )}
-                    <ThumbsUp className={`w-8 h-8 relative z-10 transition-transform duration-300 ${myVote === true ? 'animate-bounce scale-125' : ''}`} />
-                    <span className="text-xl font-bold relative z-10">כן! הוא יודע!</span>
+                    <ThumbsUp className={`w-16 h-16 mb-2 transition-transform duration-300 ${myVote === true ? 'animate-bounce scale-125' : ''}`} />
+                    <span className="text-3xl font-bold">כן</span>
+                    <span className="text-sm opacity-80">הוא צודק!</span>
                     </button>
 
                     <button 
                     onClick={() => handleVote(false)}
                     disabled={hasVoted}
-                    className={`relative w-full p-6 rounded-2xl flex items-center justify-center gap-4 transition-all duration-300 transform overflow-hidden 
+                    className={`relative flex flex-col items-center justify-center p-8 rounded-2xl transition-all duration-300 transform flex-1 
                     ${hasVoted ? 'cursor-default' : 'cursor-pointer'}
                     ${
                         myVote === false
@@ -448,9 +554,11 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                     {myVote === false && (
                         <div className="absolute inset-0 bg-red-400/30 animate-ping rounded-2xl" style={{ animationDuration: '0.6s', animationIterationCount: 1 }}></div>
                     )}
-                    <ThumbsDown className={`w-8 h-8 relative z-10 transition-transform duration-300 ${myVote === false ? 'animate-bounce scale-125' : ''}`} />
-                    <span className="text-xl font-bold relative z-10">אין לו מושג...</span>
+                    <ThumbsDown className={`w-16 h-16 mb-2 transition-transform duration-300 ${myVote === false ? 'animate-bounce scale-125' : ''}`} />
+                    <span className="text-3xl font-bold">לא</span>
+                    <span className="text-sm opacity-80">הוא טועה!</span>
                     </button>
+                    </div>
 
                     {showVoteConfirm && (
                     <div className="text-center mt-6 animate-pop">
@@ -526,7 +634,7 @@ const PlayerMobileView: React.FC<PlayerMobileViewProps> = ({ gameState, playerId
                         ) : (
                             <div className="bg-blue-900/20 border-2 border-blue-500 p-6 rounded-3xl">
                                 <PartyPopper className="w-16 h-16 text-blue-500 mx-auto mb-4" />
-                                <h2 className="text-2xl font-bold text-white mb-2">תהנה מההצגה</h2>
+                                <h2 className="text-2xl font-bold text-white mb-2">תהנה מההצצגה</h2>
                                 <p className="text-blue-300">תצחק על החתן והמפסידים</p>
                             </div>
                         )}

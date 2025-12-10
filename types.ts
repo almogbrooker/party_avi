@@ -32,9 +32,23 @@ export interface QAPair {
   qEnd: number;
   aStart: number;
   aEnd: number;
-  
+
   // Legacy support for display string if needed, but we use numbers for logic
-  timestampStr?: string; 
+  timestampStr?: string;
+}
+
+export interface GameMusic {
+  lobby?: File;
+  question?: File;
+  groomAnswering?: File;
+  voting?: File;
+  reveal?: File;
+  mission?: File;
+  victory?: File;
+}
+
+export interface GroomImages {
+  images: File[]; // Array of groom images for random display
 }
 
 export enum GameStage {
@@ -50,15 +64,15 @@ export interface GameState {
   missions: Mission[];
   questions: QAPair[];
   currentQuestionIndex: number;
-  
+
   // Changed from single file to a map of ID -> File
-  videos: Record<string, File>; 
-  
+  videos: Record<string, File>;
+
   groomCorrectCount: number;
   gameCode: string | null;
   isHost: boolean;
   isPaused: boolean; // Global pause state
-  
+
   // Real-time round state
   roundPhase: 'QUESTION' | 'GROOM_ANSWERING' | 'GROOM_WRITING' | 'VOTING' | 'REVEAL' | 'JUDGMENT' | 'CONSEQUENCE' | 'MISSION_EXECUTION' | 'VICTIM_SELECTION' | 'VICTIM_REVEAL';
   currentVotes: Record<string, boolean>; // playerId -> true (He's Right) / false (He's Wrong)
@@ -68,6 +82,10 @@ export interface GameState {
   groomAnswer: string | null; // The text answer provided by the groom
   selectedVictimId: string | null;
   pastVictims: string[];
+  rouletteTargets?: string[]; // Players to include in roulette
+  isRouletteSpinning?: boolean;
+  gameMusic: GameMusic;
+  groomImages: GroomImages; // Store groom images
 }
 
 // Network Messages

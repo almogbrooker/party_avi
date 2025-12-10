@@ -9,25 +9,89 @@ interface GamePhaseProps {
   onGameEnd: () => void;
 }
 
-const AMBIENT_MUSIC_URL = "https://assets.mixkit.co/music/preview/mixkit-game-show-suspense-942.mp3"; // Placeholder
-const SUSPENSE_MUSIC_URL = "https://assets.mixkit.co/music/preview/mixkit-ticking-clock-suspense-2775.mp3"; // Placeholder
+// Audio disabled - was causing NotSupportedError
+const AMBIENT_MUSIC_URL = "";
+const SUSPENSE_MUSIC_URL = "";
+const CORRECT_ANSWER_URL = "";
+const WRONG_ANSWER_URL = "";
+const VICTIM_SELECTED_URL = "";
+const MISSION_COMPLETE_URL = "";
+const COUNTDOWN_TICK_URL = "";
 
-// Additional sound effects
-const CORRECT_ANSWER_URL = "https://assets.mixkit.co/sfx/preview/mixkit-achievement-bell-600.mp3";
-const WRONG_ANSWER_URL = "https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-946.mp3";
-const VICTIM_SELECTED_URL = "https://assets.mixkit.co/sfx/preview/mixkit-ominous-drums-227.mp3";
-const MISSION_COMPLETE_URL = "https://assets.mixkit.co/sfx/preview/mixkit-success-fanfare-trumpets-618.mp3";
-const COUNTDOWN_TICK_URL = "https://assets.mixkit.co/sfx/preview/mixkit-clock-ticking-976.mp3";
+// Random groom image display component
+const RandomGroomImage: React.FC<{ images: File[] }> = ({ images }) => {
+  const [currentImage, setCurrentImage] = useState<string | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (images.length === 0) return;
+
+    const showRandomImage = () => {
+      const randomIndex = Math.floor(Math.random() * images.length);
+      const imageUrl = URL.createObjectURL(images[randomIndex]);
+      setCurrentImage(imageUrl);
+      setIsVisible(true);
+
+      // Hide after 3 seconds
+      setTimeout(() => {
+        setIsVisible(false);
+        setTimeout(() => URL.revokeObjectURL(imageUrl), 1000);
+      }, 3000);
+    };
+
+    // Show first image after 10 seconds, then randomly every 15-30 seconds
+    const initialTimer = setTimeout(showRandomImage, 10000);
+    const randomInterval = setInterval(() => {
+      const randomDelay = Math.random() * 15000 + 15000; // 15-30 seconds
+      setTimeout(showRandomImage, randomDelay);
+    }, 30000); // Check every 30 seconds
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(randomInterval);
+      if (currentImage) URL.revokeObjectURL(currentImage);
+    };
+  }, [images]);
+
+  if (!isVisible || !currentImage) return null;
+
+  return (
+    <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 animate-bounce">
+      <img
+        src={currentImage}
+        alt="Random groom moment"
+        className="w-48 h-48 md:w-64 md:h-64 object-contain rounded-2xl border-4 border-white shadow-2xl"
+      />
+    </div>
+  );
+};
 
 const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameEnd }) => {
   // Helper function to play sound with lazy loading
   const playSound = (ref: React.MutableRefObject<HTMLAudioElement | null>, url: string, volume: number = 0.5) => {
-    if (!isMusicOn) return;
+    if (!isMusicOn || !url) return;
     if (!ref.current) {
       ref.current = new Audio(url);
       ref.current.volume = volume;
     }
     ref.current.play().catch(() => {});
+  };
+
+  // Helper function to safely pause audio
+  const safePause = (ref: React.MutableRefObject<HTMLAudioElement | null>) => {
+    if (ref.current) {
+      ref.current.pause();
+    }
+  };
+
+  // Helper function to safely play audio
+  const safePlay = (ref: React.MutableRefObject<HTMLAudioElement | null>, url: string) => {
+    if (!isMusicOn || !url) return;
+    if (!ref.current) {
+      ref.current = new Audio(url);
+      ref.current.volume = 0.3;
+    }
+    ref.current.play().catch(e => console.log("Audio play failed:", e));
   };
 
   const {
@@ -45,8 +109,20 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
     pastVictims
   } = gameState;
 
-  const currentQ = questions[currentQuestionIndex];
-  
+  const currentQ = questions && questions.length > 0 ? questions[currentQuestionIndex] : null;
+
+  // If no questions, show a message
+  if (!questions || questions.length === 0) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-black">
+        <div className="text-center text-white">
+          <h2 className="text-3xl font-bold mb-4">אין שאלות זמינות</h2>
+          <p>אנא הוסף שאלות והתחל מחדש</p>
+        </div>
+      </div>
+    );
+  }
+
   // Audio Refs
   const ambientAudioRef = useRef<HTMLAudioElement | null>(null);
   const suspenseAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -57,7 +133,16 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
   const victimSelectedRef = useRef<HTMLAudioElement | null>(null);
   const missionCompleteRef = useRef<HTMLAudioElement | null>(null);
   const countdownTickRef = useRef<HTMLAudioElement | null>(null);
-  
+
+  // Custom music refs
+  const lobbyMusicRef = useRef<HTMLAudioElement | null>(null);
+  const questionMusicRef = useRef<HTMLAudioElement | null>(null);
+  const groomMusicRef = useRef<HTMLAudioElement | null>(null);
+  const votingMusicRef = useRef<HTMLAudioElement | null>(null);
+  const revealMusicRef = useRef<HTMLAudioElement | null>(null);
+  const missionMusicRef = useRef<HTMLAudioElement | null>(null);
+  const victoryMusicRef = useRef<HTMLAudioElement | null>(null);
+
   const [isMusicOn, setIsMusicOn] = useState(true);
   const [timeLeft, setTimeLeft] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -68,56 +153,124 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
 
   // --- AUDIO MANAGEMENT ---
   useEffect(() => {
-      // Initialize Audio Objects only if music is on
-      if (!isMusicOn) return;
+      // Play appropriate music for each phase
+      if (!gameState.isHost) return; // Only host controls music
 
-      // Lazy load audio to improve performance
-      if (!ambientAudioRef.current) {
-          ambientAudioRef.current = new Audio(AMBIENT_MUSIC_URL);
-          ambientAudioRef.current.loop = true;
-          ambientAudioRef.current.volume = 0.1;
+      const stopAllAudio = () => {
+          if (lobbyMusicRef.current) lobbyMusicRef.current.pause();
+          if (questionMusicRef.current) questionMusicRef.current.pause();
+          if (groomMusicRef.current) groomMusicRef.current.pause();
+          if (votingMusicRef.current) votingMusicRef.current.pause();
+          if (revealMusicRef.current) revealMusicRef.current.pause();
+          if (missionMusicRef.current) missionMusicRef.current.pause();
+          if (victoryMusicRef.current) victoryMusicRef.current.pause();
+      };
+
+      stopAllAudio();
+
+      // Only play if not paused
+      if (isPaused) return;
+
+      // Get music URLs from gameState
+      const { gameMusic } = gameState;
+
+      // Create audio objects from files
+      if (gameMusic.lobby && !lobbyMusicRef.current) {
+          lobbyMusicRef.current = new Audio(URL.createObjectURL(gameMusic.lobby));
+          lobbyMusicRef.current.loop = true;
+          lobbyMusicRef.current.volume = 0.5;
       }
-      if (!suspenseAudioRef.current) {
-          suspenseAudioRef.current = new Audio(SUSPENSE_MUSIC_URL);
-          suspenseAudioRef.current.loop = true;
-          suspenseAudioRef.current.volume = 0.3;
+      if (gameMusic.question && !questionMusicRef.current) {
+          questionMusicRef.current = new Audio(URL.createObjectURL(gameMusic.question));
+          questionMusicRef.current.loop = true;
+          questionMusicRef.current.volume = 0.4;
+      }
+      if (gameMusic.groomAnswering && !groomMusicRef.current) {
+          groomMusicRef.current = new Audio(URL.createObjectURL(gameMusic.groomAnswering));
+          groomMusicRef.current.loop = true;
+          groomMusicRef.current.volume = 0.5;
+      }
+      if (gameMusic.voting && !votingMusicRef.current) {
+          votingMusicRef.current = new Audio(URL.createObjectURL(gameMusic.voting));
+          votingMusicRef.current.loop = true;
+          votingMusicRef.current.volume = 0.4;
+      }
+      if (gameMusic.reveal && !revealMusicRef.current) {
+          revealMusicRef.current = new Audio(URL.createObjectURL(gameMusic.reveal));
+          revealMusicRef.current.volume = 0.6;
+      }
+      if (gameMusic.mission && !missionMusicRef.current) {
+          missionMusicRef.current = new Audio(URL.createObjectURL(gameMusic.mission));
+          missionMusicRef.current.loop = true;
+          missionMusicRef.current.volume = 0.5;
+      }
+      if (gameMusic.victory && !victoryMusicRef.current) {
+          victoryMusicRef.current = new Audio(URL.createObjectURL(gameMusic.victory));
+          victoryMusicRef.current.volume = 0.7;
       }
 
-      // Load other sounds on demand
-      const loadSound = (ref: React.MutableRefObject<HTMLAudioElement | null>, url: string, volume: number = 0.5) => {
-          if (!ref.current) {
-              ref.current = new Audio(url);
-              ref.current.volume = volume;
+      // Play appropriate music based on phase
+      const playPhaseMusic = (audioRef: React.MutableRefObject<HTMLAudioElement | null>) => {
+          if (audioRef.current) {
+              audioRef.current.currentTime = 0;
+              audioRef.current.play().catch(err => console.log('Audio play failed:', err));
           }
       };
 
-      const ambient = ambientAudioRef.current;
-      const suspense = suspenseAudioRef.current;
-
-      if (!isMusicOn || isPaused) {
-          ambient.pause();
-          suspense.pause();
-          return;
+      switch (gameState.stage) {
+          case GameStage.LOBBY:
+              if (lobbyMusicRef.current) playPhaseMusic(lobbyMusicRef);
+              break;
+          case GameStage.PLAYING:
+              switch (roundPhase) {
+                  case 'QUESTION':
+                      if (questionMusicRef.current) playPhaseMusic(questionMusicRef);
+                      break;
+                  case 'GROOM_ANSWERING':
+                      if (groomMusicRef.current) playPhaseMusic(groomMusicRef);
+                      break;
+                  case 'VOTING':
+                      if (votingMusicRef.current) playPhaseMusic(votingMusicRef);
+                      break;
+                  case 'REVEAL':
+                  case 'JUDGMENT':
+                      if (revealMusicRef.current) playPhaseMusic(revealMusicRef);
+                      break;
+                  case 'MISSION_EXECUTION':
+                      if (missionMusicRef.current) playPhaseMusic(missionMusicRef);
+                      break;
+                  case 'VICTIM_SELECTION':
+                  case 'VICTIM_REVEAL':
+                      // Keep current music playing
+                      break;
+              }
+              break;
+          case GameStage.SUMMARY:
+              if (victoryMusicRef.current) playPhaseMusic(victoryMusicRef);
+              break;
       }
 
-      // Logic to switch tracks based on phase
-      const isSuspensePhase = roundPhase === 'GROOM_ANSWERING' || roundPhase === 'VOTING' || roundPhase === 'VICTIM_SELECTION';
-      
-      if (isSuspensePhase) {
-          ambient.pause();
-          suspense.play().catch(e => console.log("Audio play failed", e));
-      } else {
-          suspense.pause();
-          // Don't play ambient during video playback (QUESTION/REVEAL) to hear the audio
-          const isVideoPhase = roundPhase === 'QUESTION' || roundPhase === 'REVEAL';
-          if (!isVideoPhase) {
-             ambient.play().catch(e => console.log("Audio play failed", e));
-          } else {
-             ambient.pause();
-          }
-      }
+      return () => {
+          stopAllAudio();
+      };
+  }, [gameState.stage, roundPhase, gameState.gameMusic, isPaused, gameState.isHost]);
 
-  }, [roundPhase, isMusicOn, isPaused]);
+  // Log state on mount and changes
+  useEffect(() => {
+      console.log('🎮 GamePhase mounted/updated:', {
+          stage: gameState.stage,
+          roundPhase,
+          playersCount: players.length,
+          currentQuestionIndex,
+          hasVideo: !!currentQ,
+          isHost: gameState.isHost,
+          isPaused,
+          groomAnswer: groomAnswer ? '[SET]' : '[NOT SET]',
+          votesCount: Object.keys(currentVotes).length,
+          roundLosers: roundLosers,
+          selectedVictim: selectedVictimId
+      });
+  }, [gameState.stage, roundPhase, players.length, currentQuestionIndex, isPaused, groomAnswer, currentVotes, roundLosers, selectedVictimId]);
 
   // --- BOT AUTOMATION ---
   useEffect(() => {
@@ -210,13 +363,15 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
   const handleTimeUpdate = () => {
       if (!videoRef.current || !currentQ) return;
       const t = videoRef.current.currentTime;
-      
+
       if (roundPhase === 'QUESTION' && t >= currentQ.qEnd) {
+          console.log('🎥 Video reached question end, transitioning to GROOM_ANSWERING');
           videoRef.current.pause();
           onUpdateState({ roundPhase: 'GROOM_ANSWERING' });
       }
-      
+
       if (roundPhase === 'REVEAL' && t >= currentQ.aEnd) {
+          console.log('🎥 Video reached answer end, transitioning to JUDGMENT');
           videoRef.current.pause();
           onUpdateState({ roundPhase: 'JUDGMENT' });
       }
@@ -224,16 +379,28 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
 
   // --- TIMER LOGIC ---
   useEffect(() => {
+      console.log('⏰ Timer effect - Phase:', roundPhase, 'TimeLeft:', timeLeft);
       let interval: any;
-      
+
       // Setup Timer based on phase
       if (roundPhase === 'GROOM_ANSWERING') {
-          if (timeLeft === 0) setTimeLeft(60); // 60s for Groom
+          // Stop timer if groom has answered
+          if (groomAnswer && timeLeft > 0) {
+              console.log('⏰ Groom answered, stopping timer at:', timeLeft);
+              setTimeLeft(0);
+          } else if (timeLeft === 0 && !groomAnswer) {
+              console.log('⏰ Starting groom timer at 60 seconds');
+              setTimeLeft(60); // 60s for Groom
+          }
       } else if (roundPhase === 'VOTING') {
-          if (timeLeft === 0) setTimeLeft(20); // 20s for Voting
+          if (timeLeft === 0) {
+              console.log('⏰ Starting voting timer at 20 seconds');
+              setTimeLeft(20); // 20s for Voting
+          }
       } else {
           // Reset timer for other phases
           if (timeLeft !== 0 && roundPhase !== 'GROOM_ANSWERING' && roundPhase !== 'VOTING') {
+              console.log('⏰ Resetting timer for phase:', roundPhase);
               setTimeLeft(0);
           }
       }
@@ -241,23 +408,41 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
       if ((roundPhase === 'GROOM_ANSWERING' || roundPhase === 'VOTING') && !isPaused) {
           interval = setInterval(() => {
               setTimeLeft(prev => {
+                  // Don't countdown if groom has answered
+                  if (roundPhase === 'GROOM_ANSWERING' && groomAnswer) {
+                      console.log('⏰ Groom has answered, stopping countdown');
+                      return 0;
+                  }
+
+                  const newTime = prev - 1;
+                  console.log('⏱️ Timer tick:', prev, '->', newTime);
+
                   // Play tick sound when time is running out (last 5 seconds)
                   if (prev <= 5 && prev > 1) {
                       playSound(countdownTickRef, COUNTDOWN_TICK_URL, 0.3);
                   }
 
                   if (prev <= 1) {
+                      console.log('⏱️ Timer complete!');
                       clearInterval(interval);
-                      handleTimerComplete();
+                      setTimeout(handleTimerComplete, 0);
                       return 0;
                   }
-                  return prev - 1;
+                  return newTime;
               });
           }, 1000);
       }
       
       return () => clearInterval(interval);
-  }, [roundPhase, isPaused]);
+  }, [roundPhase, isPaused, groomAnswer]);
+
+  // Transition to VOTING when groom answers
+  useEffect(() => {
+    if (roundPhase === 'GROOM_ANSWERING' && groomAnswer && gameState.isHost) {
+      console.log('🎯 Groom answered, transitioning to VOTING phase');
+      onUpdateState({ roundPhase: 'VOTING' });
+    }
+  }, [groomAnswer, roundPhase, gameState.isHost]);
 
   const handleTimerComplete = () => {
       if (roundPhase === 'GROOM_ANSWERING') {
@@ -371,6 +556,7 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
         players: updatedPlayers,
         groomCorrectCount: isCorrect ? gameState.groomCorrectCount + 1 : gameState.groomCorrectCount,
         roundLosers: losers,
+        rouletteTargets: losers, // Add losers to roulette targets
         roundPhase: nextPhase
     });
   };
@@ -398,11 +584,14 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
 
   // Circular Timer SVG
   const renderTimer = (maxTime: number) => {
+      // Don't render if timer is at 0
+      if (timeLeft === 0) return null;
+
       const radius = 45;
       const circumference = 2 * Math.PI * radius;
       const progress = (timeLeft / maxTime) * circumference;
       const color = timeLeft < 5 ? 'text-red-500' : (roundPhase === 'GROOM_ANSWERING' ? 'text-yellow-400' : 'text-blue-400');
-      
+
       return (
           <div className="relative w-48 h-48 flex items-center justify-center animate-pop">
               <svg className="w-full h-full transform -rotate-90 drop-shadow-2xl" viewBox="0 0 100 100">
@@ -451,9 +640,9 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
 
       {/* --- MAIN CONTENT GRID --- */}
       <div className="flex-1 grid grid-cols-12 gap-0 overflow-hidden relative h-full">
-          
+
           {/* LEFT: Video & Actions */}
-          <div className="col-span-8 relative bg-black flex flex-col items-center justify-center">
+          <div className="col-span-10 relative bg-black flex flex-col items-center justify-center">
               {/* Video Player */}
               <div className="relative w-full h-full overflow-hidden">
                   <video 
@@ -513,7 +702,7 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                           {roundPhase === 'GROOM_ANSWERING' && groomAnswer && (
                               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-yellow-500 text-black px-8 py-4 rounded-xl animate-pop shadow-xl border-4 border-white max-w-2xl w-full text-center">
                                   <div className="text-xs font-bold uppercase mb-1 opacity-70">החתן כתב:</div>
-                                  <div className="text-4xl font-black">"{groomAnswer}"</div>
+                                  <div className="text-4xl font-black">{groomAnswer}</div>
                               </div>
                           )}
                       </div>
@@ -522,30 +711,67 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                   {/* 3. Victim Roulette Overlay */}
                   {(roundPhase === 'VICTIM_SELECTION' || roundPhase === 'VICTIM_REVEAL') && (
                       <div className="absolute inset-0 bg-slate-900/95 z-20 flex flex-col items-center justify-center">
-                          <h2 className="text-5xl font-black text-red-500 mb-12 uppercase tracking-widest animate-pulse drop-shadow-[0_0_20px_rgba(220,38,38,0.8)]">הקורבן הנבחר</h2>
-                          
-                          <div className="relative w-80 h-80">
-                              {/* Background Glow */}
-                              <div className="absolute inset-0 bg-red-500 rounded-full blur-3xl opacity-20 animate-pulse"></div>
-                              
-                              {/* Avatar Cycle */}
-                              <div className="relative w-full h-full rounded-full border-8 border-red-600 overflow-hidden shadow-[0_0_80px_rgba(220,38,38,0.6)] bg-slate-800">
+                          <h2 className="text-5xl font-black text-red-500 mb-8 uppercase tracking-widest animate-pulse drop-shadow-[0_0_20px_rgba(220,38,38,0.8)]">
+                              {roundPhase === 'VICTIM_SELECTION' ? 'בחר קורבן' : 'הקורבן הנבחר'}
+                          </h2>
+
+                          {/* Show all losers in circles */}
+                          <div className="relative w-[600px] h-[600px]">
+                              {/* Central roulette circle */}
+                              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full border-8 border-red-600 overflow-hidden shadow-[0_0_80px_rgba(220,38,38,0.6)] bg-slate-800 z-10">
                                    {roundLosers.length > 0 && (
                                        (() => {
-                                           // Determine which ID to show
-                                           const idToShow = isRouletteSpinning 
-                                                ? roundLosers[rouletteIndex] 
+                                           const idToShow = isRouletteSpinning
+                                                ? roundLosers[rouletteIndex]
                                                 : selectedVictimId || roundLosers[0];
-                                           
+
                                            const p = players.find(pl => pl.id === idToShow);
                                            return p?.photo ? (
                                                <img src={p.photo} className="w-full h-full object-cover" />
                                            ) : (
-                                               <div className="w-full h-full flex items-center justify-center"><User className="w-32 h-32 text-slate-500"/></div>
+                                               <div className="w-full h-full flex items-center justify-center"><User className="w-16 h-16 text-slate-500"/></div>
                                            );
                                        })()
                                    )}
                               </div>
+
+                              {/* All losers circles around */}
+                              {roundLosers.map((loserId, index) => {
+                                  const angle = (360 / roundLosers.length) * index;
+                                  const radius = 200;
+                                  const x = Math.cos((angle - 90) * Math.PI / 180) * radius;
+                                  const y = Math.sin((angle - 90) * Math.PI / 180) * radius;
+                                  const isSelected = isRouletteSpinning ? index === rouletteIndex : loserId === selectedVictimId;
+                                  const player = players.find(p => p.id === loserId);
+
+                                  return (
+                                      <div
+                                          key={loserId}
+                                          className={`absolute w-24 h-24 rounded-full border-4 overflow-hidden transition-all duration-300 ${
+                                              isSelected
+                                                  ? 'border-red-600 scale-125 shadow-[0_0_60px_rgba(220,38,38,0.8)] z-20'
+                                                  : 'border-slate-600 opacity-60 hover:scale-110 hover:opacity-100'
+                                          }`}
+                                          style={{
+                                              left: `${300 + x}px`,
+                                              top: `${300 + y}px`,
+                                              transform: 'translate(-50%, -50%)'
+                                          }}
+                                          onClick={() => !isRouletteSpinning && handleSelectVictim(loserId)}
+                                      >
+                                          {player?.photo ? (
+                                              <img src={player.photo} className="w-full h-full object-cover" />
+                                          ) : (
+                                              <div className="w-full h-full flex items-center justify-center bg-slate-700">
+                                                  <User className="w-8 h-8 text-slate-400"/>
+                                              </div>
+                                          )}
+                                          {isSelected && (
+                                              <div className="absolute inset-0 border-4 border-red-400 rounded-full animate-ping"></div>
+                                          )}
+                                      </div>
+                                  );
+                              })}
                           </div>
                           
                           {roundPhase === 'VICTIM_REVEAL' && !isRouletteSpinning && selectedVictimId && (
@@ -613,11 +839,26 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                                </div>
 
                                <div className="bg-white/10 p-8 rounded-2xl border border-white/20 mb-10 backdrop-blur-sm">
-                                   <h4 className="text-slate-400 text-lg uppercase tracking-wider mb-4 font-bold">המשימה היא:</h4>
-                                   <p className="text-4xl md:text-5xl font-black text-white leading-relaxed">
+                                   <h4 className="text-slate-400 text-lg uppercase tracking-wider mb-4 font-bold">השאלה הייתה:</h4>
+                                   <p className="text-4xl md:text-5xl font-black text-white leading-relaxed mb-6">
                                        {currentQ.question}
                                    </p>
-                                   <div className="mt-4 text-yellow-400 font-bold text-xl animate-pulse">בצעו את המשימה עכשיו!</div>
+
+                                   <h4 className="text-yellow-400 text-lg uppercase tracking-wider mb-2 font-bold">תשובת החתן:</h4>
+                                   <p className="text-3xl md:text-4xl font-bold text-yellow-300 leading-relaxed mb-6">
+                                       {groomAnswer || currentQ.answer}
+                                   </p>
+
+                                   {activeMission && (
+                                       <>
+                                           <h4 className="text-slate-400 text-lg uppercase tracking-wider mb-2 font-bold">המשימה:</h4>
+                                           <p className="text-2xl md:text-3xl font-black text-white leading-relaxed mb-4">
+                                               {activeMission.text}
+                                           </p>
+                                       </>
+                                   )}
+
+                                   <div className="mt-6 text-yellow-400 font-bold text-xl animate-pulse">בצעו את המשימה עכשיו!</div>
                                </div>
 
                                <button onClick={nextQuestion} className="bg-gradient-to-r from-yellow-600 to-yellow-400 hover:from-yellow-500 hover:to-yellow-300 text-black font-black text-2xl py-5 px-16 rounded-full shadow-[0_10px_40px_rgba(234,179,8,0.4)] transform transition-transform hover:scale-105 flex items-center justify-center gap-4 mx-auto">
@@ -641,7 +882,7 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
           </div>
 
           {/* RIGHT: Leaderboard & Status */}
-          <div className="col-span-4 bg-slate-900 border-l border-slate-800 flex flex-col z-20 shadow-2xl h-full">
+          <div className="col-span-2 bg-slate-900 border-l border-slate-800 flex flex-col z-20 shadow-2xl h-full">
               {/* Header Status */}
               <div className="p-6 bg-slate-800 border-b border-slate-700">
                   <div className="flex justify-between items-center mb-4">
@@ -665,14 +906,14 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
                   {groomAnswer && roundPhase !== 'GROOM_ANSWERING' && (
                       <div className="mt-2 bg-gradient-to-r from-yellow-900/40 to-slate-800 border border-yellow-500/30 p-3 rounded-xl text-center shadow-lg">
                           <span className="text-xs text-yellow-500 block mb-1 font-bold uppercase tracking-wide">תשובת החתן</span>
-                          <span className="text-white font-black text-lg">"{groomAnswer}"</span>
+                          <span className="text-white font-black text-lg">{groomAnswer}</span>
                       </div>
                   )}
               </div>
 
               {/* Player Grid */}
-              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-900">
-                  <div className="grid grid-cols-1 gap-3">
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-900 max-h-[200px]">
+                  <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-2 gap-2">
                       {players.sort((a,b) => b.score - a.score).map(p => {
                           const vote = currentVotes[p.id];
                           const isVoting = roundPhase === 'VOTING';
@@ -683,36 +924,33 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
 
                           return (
                               <div key={p.id} className={`
-                                  relative p-3 rounded-xl border flex items-center justify-between transition-all duration-300
+                                  relative p-2 rounded-lg border flex flex-col items-center transition-all duration-300
                                   ${p.isGroom ? 'bg-gradient-to-r from-yellow-900/40 to-slate-800 border-yellow-500/50' : 'bg-slate-800 border-slate-700'}
-                                  ${isWinner ? 'border-green-500 bg-green-900/20 shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}
+                                  ${isWinner ? 'border-green-500 bg-green-900/20 shadow-[0_0_10px_rgba(34,197,94,0.3)]' : ''}
                                   ${isLoser ? 'border-red-500 opacity-60' : ''}
                                   ${isVictim ? 'border-red-500 bg-red-900/50 scale-105 z-10 opacity-100' : ''}
                               `}>
-                                  <div className="flex items-center gap-3">
-                                      <div className="relative">
-                                          <div className={`w-12 h-12 rounded-full bg-slate-700 overflow-hidden border-2 ${p.isBot ? 'border-slate-500 border-dashed' : 'border-slate-600'}`}>
-                                              {p.photo ? <img src={p.photo} className="w-full h-full object-cover"/> : <User className="w-full h-full p-2 text-slate-400"/>}
-                                          </div>
-                                          {p.isGroom && <div className="absolute -top-2 -left-1 text-yellow-500 drop-shadow-md"><Crown className="w-6 h-6 fill-current"/></div>}
-                                          {isVictim && <div className="absolute -bottom-1 -right-1 bg-red-600 rounded-full p-1 border border-white"><Skull className="w-3 h-3 text-white"/></div>}
+                                  <div className="relative">
+                                      <div className={`w-16 h-16 rounded-full bg-slate-700 overflow-hidden border-2 ${p.isBot ? 'border-slate-500 border-dashed' : 'border-slate-600'}`}>
+                                          {p.photo ? <img src={p.photo} className="w-full h-full object-cover"/> : <User className="w-full h-full p-4 text-slate-400"/>}
                                       </div>
-                                      <div>
-                                          <div className={`font-bold text-base flex items-center gap-2 ${p.isGroom ? 'text-yellow-400' : 'text-slate-200'}`}>
+                                      {p.isGroom && <div className="absolute -top-2 -left-1 text-yellow-500 drop-shadow-md"><Crown className="w-6 h-6 fill-current"/></div>}
+                                      {isVictim && <div className="absolute -bottom-1 -right-1 bg-red-600 rounded-full p-1 border border-white"><Skull className="w-3 h-3 text-white"/></div>}
+                                  </div>
+                                  <div className="mt-1 text-center">
+                                          <div className={`font-bold text-sm ${p.isGroom ? 'text-yellow-400' : 'text-slate-200'}`}>
                                               {p.name}
-                                              {p.isBot && <span className="text-[9px] bg-slate-700 px-1.5 rounded text-slate-400 font-normal">BOT</span>}
                                           </div>
-                                          <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                                              <span className="font-mono font-bold bg-slate-950 px-1.5 rounded">{p.score}</span>
-                                              {p.drinks > 0 && <span className="text-red-400 flex items-center font-bold bg-red-950/50 px-1.5 rounded border border-red-900/50"><Wine className="w-3 h-3 mr-1"/> {p.drinks}</span>}
+                                          <div className="flex items-center justify-center gap-2 text-xs text-slate-400 mt-1">
+                                              <span className="font-mono font-bold bg-slate-950 px-1 rounded">{p.score}</span>
+                                              {p.drinks > 0 && <span className="text-red-400 flex items-center"><Wine className="w-3 h-3"/> {p.drinks}</span>}
                                           </div>
-                                      </div>
                                   </div>
 
                                   {/* Status Icon */}
                                   <div>
                                       {isVoting && (
-                                          vote !== undefined 
+                                          vote !== undefined
                                             ? <div className="w-4 h-4 bg-green-500 rounded-full shadow-[0_0_10px_#22c55e] animate-pop"></div>
                                             : <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
                                       )}
@@ -731,6 +969,9 @@ const GamePhase: React.FC<GamePhaseProps> = ({ gameState, onUpdateState, onGameE
               </div>
           </div>
       </div>
+
+      {/* Random groom images */}
+      <RandomGroomImage images={gameState.groomImages?.images || []} />
     </div>
   );
 };

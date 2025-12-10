@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Mission, QAPair, VideoAsset } from '../types';
-import { Video, ListTodo, PlayCircle, Loader2, Smartphone, Monitor, ArrowRight, UserPlus, Clock, Trash2, Plus, Play, Crown, Camera, Image as ImageIcon, X, Aperture, User, Save, Upload, FileJson, Sparkles, Check, GripVertical, Settings2, Timer, AlertCircle, RefreshCw, LogOut } from 'lucide-react';
+import { Mission, QAPair, VideoAsset, GameMusic, GroomImages } from '../types';
+import { Video, ListTodo, PlayCircle, Loader2, Smartphone, Monitor, ArrowRight, UserPlus, Clock, Trash2, Plus, Play, Crown, Camera, Image as ImageIcon, X, Aperture, User, Save, Upload, FileJson, Sparkles, Check, GripVertical, Settings2, Timer, AlertCircle, RefreshCw, LogOut, Music, Volume2 } from 'lucide-react';
 import { analyzeVideoForQA } from '../services/geminiService';
 
 interface SetupPhaseProps {
-  onHostGame: (videos: Record<string, File>, missions: Mission[], questions: QAPair[]) => void;
+  onHostGame: (videos: Record<string, File>, missions: Mission[], questions: QAPair[], gameMusic?: GameMusic) => void;
   onJoinGame: (name: string, code: string, isGroom?: boolean, photo?: string, existingId?: string) => void;
   isLoading: boolean;
   isJoining: boolean;
@@ -42,7 +42,7 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
     initialRole = 'PLAYER' 
 }) => {
   const [mode, setMode] = useState<'SELECT' | 'HOST_SETUP' | 'JOIN'>('SELECT');
-  const [setupStep, setSetupStep] = useState<1 | 2>(1); // 1 = Videos & Questions, 2 = Missions
+  const [setupStep, setSetupStep] = useState<1 | 2 | 3>(1); // 1 = Videos & Questions, 2 = Missions, 3 = Music
   
   // HOST STATE
   const [videoAssets, setVideoAssets] = useState<VideoAsset[]>([]);
@@ -54,6 +54,11 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
     { id: 'm3', text: 'לשתות כוס מים ללא ידיים' },
   ]);
   const [missionInput, setMissionInput] = useState('');
+
+  // MUSIC STATE
+  const [gameMusic, setGameMusic] = useState<GameMusic>({});
+  // GROOM IMAGES STATE
+  const [groomImages, setGroomImages] = useState<GroomImages>({ images: [] });
 
   // EDITOR STATE
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
@@ -171,6 +176,52 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
     e.target.value = '';
   };
 
+  const handleMusicUpload = async (e: React.ChangeEvent<HTMLInputElement>, musicType: keyof GameMusic) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      // Check if it's an audio file
+      if (!file.type.startsWith('audio/')) {
+        alert('אנא העלה קובץ אודיו (mp3, wav, וכו\')');
+        return;
+      }
+      setGameMusic(prev => ({
+        ...prev,
+        [musicType]: file
+      }));
+    }
+  };
+
+  const removeMusic = (musicType: keyof GameMusic) => {
+    setGameMusic(prev => {
+      const newMusic = { ...prev };
+      delete newMusic[musicType];
+      return newMusic;
+    });
+  };
+
+  // GROOM IMAGES HANDLERS
+  const handleGroomImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      const validImageFiles = files.filter(file => file.type.startsWith('image/'));
+
+      if (validImageFiles.length !== files.length) {
+        alert('ניתן להעלות קבצי תמונה בלבד (JPG, PNG, GIF וכו\')');
+        return;
+      }
+
+      setGroomImages(prev => ({
+        images: [...prev.images, ...validImageFiles]
+      }));
+    }
+  };
+
+  const removeGroomImage = (index: number) => {
+    setGroomImages(prev => ({
+      images: prev.images.filter((_, i) => i !== index)
+    }));
+  };
+
   const handlePendingVideoUpload = (e: React.ChangeEvent<HTMLInputElement>, targetId: string) => {
     if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
@@ -281,12 +332,12 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
           alert("חובה להעלות לפחות סרטון אחד ושאלה אחת.");
           return;
       }
-      
+
       // Convert assets to map
       const videoMap: Record<string, File> = {};
       videoAssets.forEach(v => videoMap[v.id] = v.file);
-      
-      onHostGame(videoMap, missions, questions);
+
+      onHostGame(videoMap, missions, questions, gameMusic, groomImages);
   };
 
   // Save/Load Config
@@ -643,6 +694,330 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
       </div>
   );
 
+  const renderMusicStep = () => (
+      <div className="p-8 max-w-4xl mx-auto w-full">
+          <div className="text-center mb-8">
+              <h3 className="text-3xl font-bold text-white mb-2 flex items-center justify-center gap-3">
+                  <Music className="w-8 h-8 text-green-400" />
+                  הוספת מוזיקה למשחק
+              </h3>
+              <p className="text-slate-400">בחרו מוזיקה לכל שלב המשחק (אופציונלי)</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* Lobby Music */}
+              <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <Volume2 className="w-5 h-5 text-purple-400" />
+                      מוזיקת לובי
+                  </h4>
+                  <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => handleMusicUpload(e, 'lobby')}
+                      className="hidden"
+                      id="lobby-music"
+                  />
+                  <label
+                      htmlFor="lobby-music"
+                      className="block w-full cursor-pointer"
+                  >
+                      {gameMusic.lobby ? (
+                          <div className="bg-slate-700 rounded-lg p-4 text-center">
+                              <p className="text-green-400 font-medium truncate">{gameMusic.lobby.name}</p>
+                              <button
+                                  onClick={(e) => { e.preventDefault(); removeMusic('lobby'); }}
+                                  className="mt-2 text-xs text-red-400 hover:text-red-300"
+                              >
+                                  הסר
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center hover:border-purple-500/50 transition-colors">
+                              <Music className="w-12 h-12 text-slate-500 mx-auto mb-2" />
+                              <p className="text-slate-400 text-sm">לחץ להעלאת קובץ אודיו</p>
+                          </div>
+                      )}
+                  </label>
+              </div>
+
+              {/* Question Music */}
+              <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <Volume2 className="w-5 h-5 text-blue-400" />
+                      מוזיקת שאלות
+                  </h4>
+                  <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => handleMusicUpload(e, 'question')}
+                      className="hidden"
+                      id="question-music"
+                  />
+                  <label
+                      htmlFor="question-music"
+                      className="block w-full cursor-pointer"
+                  >
+                      {gameMusic.question ? (
+                          <div className="bg-slate-700 rounded-lg p-4 text-center">
+                              <p className="text-blue-400 font-medium truncate">{gameMusic.question.name}</p>
+                              <button
+                                  onClick={(e) => { e.preventDefault(); removeMusic('question'); }}
+                                  className="mt-2 text-xs text-red-400 hover:text-red-300"
+                              >
+                                  הסר
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center hover:border-blue-500/50 transition-colors">
+                              <Music className="w-12 h-12 text-slate-500 mx-auto mb-2" />
+                              <p className="text-slate-400 text-sm">לחץ להעלאת קובץ אודיו</p>
+                          </div>
+                      )}
+                  </label>
+              </div>
+
+              {/* Groom Answering Music */}
+              <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <Volume2 className="w-5 h-5 text-yellow-400" />
+                      מוזיקת חתן עונה
+                  </h4>
+                  <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => handleMusicUpload(e, 'groomAnswering')}
+                      className="hidden"
+                      id="groom-music"
+                  />
+                  <label
+                      htmlFor="groom-music"
+                      className="block w-full cursor-pointer"
+                  >
+                      {gameMusic.groomAnswering ? (
+                          <div className="bg-slate-700 rounded-lg p-4 text-center">
+                              <p className="text-yellow-400 font-medium truncate">{gameMusic.groomAnswering.name}</p>
+                              <button
+                                  onClick={(e) => { e.preventDefault(); removeMusic('groomAnswering'); }}
+                                  className="mt-2 text-xs text-red-400 hover:text-red-300"
+                              >
+                                  הסר
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center hover:border-yellow-500/50 transition-colors">
+                              <Music className="w-12 h-12 text-slate-500 mx-auto mb-2" />
+                              <p className="text-slate-400 text-sm">לחץ להעלאת קובץ אודיו</p>
+                          </div>
+                      )}
+                  </label>
+              </div>
+
+              {/* Voting Music */}
+              <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <Volume2 className="w-5 h-5 text-pink-400" />
+                      מוזיקת הצבעה
+                  </h4>
+                  <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => handleMusicUpload(e, 'voting')}
+                      className="hidden"
+                      id="voting-music"
+                  />
+                  <label
+                      htmlFor="voting-music"
+                      className="block w-full cursor-pointer"
+                  >
+                      {gameMusic.voting ? (
+                          <div className="bg-slate-700 rounded-lg p-4 text-center">
+                              <p className="text-pink-400 font-medium truncate">{gameMusic.voting.name}</p>
+                              <button
+                                  onClick={(e) => { e.preventDefault(); removeMusic('voting'); }}
+                                  className="mt-2 text-xs text-red-400 hover:text-red-300"
+                              >
+                                  הסר
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center hover:border-pink-500/50 transition-colors">
+                              <Music className="w-12 h-12 text-slate-500 mx-auto mb-2" />
+                              <p className="text-slate-400 text-sm">לחץ להעלאת קובץ אודיו</p>
+                          </div>
+                      )}
+                  </label>
+              </div>
+
+              {/* Reveal Music */}
+              <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <Volume2 className="w-5 h-5 text-green-400" />
+                      מוזיקת חשיפה
+                  </h4>
+                  <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => handleMusicUpload(e, 'reveal')}
+                      className="hidden"
+                      id="reveal-music"
+                  />
+                  <label
+                      htmlFor="reveal-music"
+                      className="block w-full cursor-pointer"
+                  >
+                      {gameMusic.reveal ? (
+                          <div className="bg-slate-700 rounded-lg p-4 text-center">
+                              <p className="text-green-400 font-medium truncate">{gameMusic.reveal.name}</p>
+                              <button
+                                  onClick={(e) => { e.preventDefault(); removeMusic('reveal'); }}
+                                  className="mt-2 text-xs text-red-400 hover:text-red-300"
+                              >
+                                  הסר
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center hover:border-green-500/50 transition-colors">
+                              <Music className="w-12 h-12 text-slate-500 mx-auto mb-2" />
+                              <p className="text-slate-400 text-sm">לחץ להעלאת קובץ אודיו</p>
+                          </div>
+                      )}
+                  </label>
+              </div>
+
+              {/* Mission Music */}
+              <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <Volume2 className="w-5 h-5 text-orange-400" />
+                      מוזיקת משימות
+                  </h4>
+                  <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => handleMusicUpload(e, 'mission')}
+                      className="hidden"
+                      id="mission-music"
+                  />
+                  <label
+                      htmlFor="mission-music"
+                      className="block w-full cursor-pointer"
+                  >
+                      {gameMusic.mission ? (
+                          <div className="bg-slate-700 rounded-lg p-4 text-center">
+                              <p className="text-orange-400 font-medium truncate">{gameMusic.mission.name}</p>
+                              <button
+                                  onClick={(e) => { e.preventDefault(); removeMusic('mission'); }}
+                                  className="mt-2 text-xs text-red-400 hover:text-red-300"
+                              >
+                                  הסר
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center hover:border-orange-500/50 transition-colors">
+                              <Music className="w-12 h-12 text-slate-500 mx-auto mb-2" />
+                              <p className="text-slate-400 text-sm">לחץ להעלאת קובץ אודיו</p>
+                          </div>
+                      )}
+                  </label>
+              </div>
+
+              {/* Victory Music */}
+              <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <Volume2 className="w-5 h-5 text-purple-400" />
+                      מוזיקת ניצחון
+                  </h4>
+                  <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => handleMusicUpload(e, 'victory')}
+                      className="hidden"
+                      id="victory-music"
+                  />
+                  <label
+                      htmlFor="victory-music"
+                      className="block w-full cursor-pointer"
+                  >
+                      {gameMusic.victory ? (
+                          <div className="bg-slate-700 rounded-lg p-4 text-center">
+                              <p className="text-purple-400 font-medium truncate">{gameMusic.victory.name}</p>
+                              <button
+                                  onClick={(e) => { e.preventDefault(); removeMusic('victory'); }}
+                                  className="mt-2 text-xs text-red-400 hover:text-red-300"
+                              >
+                                  הסר
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="border-2 border-dashed border-slate-600 rounded-lg p-8 text-center hover:border-purple-500/50 transition-colors">
+                              <Music className="w-12 h-12 text-slate-500 mx-auto mb-2" />
+                              <p className="text-slate-400 text-sm">לחץ להעלאת קובץ אודיו</p>
+                          </div>
+                      )}
+                  </label>
+              </div>
+          </div>
+
+          {/* Groom Images Section */}
+          <div className="mt-10">
+              <h4 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                  <ImageIcon className="w-6 h-6 text-pink-400" />
+                  תמונות החתן (אופציונלי)
+              </h4>
+              <p className="text-slate-400 mb-6">הוסיפו תמונות מצחיקות של החתן שיופיעו באופן רנדומלי במהלך המשחק</p>
+
+              <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleGroomImageUpload}
+                  className="hidden"
+                  id="groom-images"
+              />
+              <label
+                  htmlFor="groom-images"
+                  className="block"
+              >
+                  <div className="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-pink-500/50 transition-colors cursor-pointer">
+                      <ImageIcon className="w-16 h-16 text-slate-500 mx-auto mb-4" />
+                      <p className="text-slate-400 text-lg font-medium mb-2">לחץ להעלאת תמונות של החתן</p>
+                      <p className="text-slate-500 text-sm">ניתן להעלות מספר תמונות בו זמנית (JPG, PNG, GIF)</p>
+                  </div>
+              </label>
+
+              {/* Display uploaded images */}
+              {groomImages.images.length > 0 && (
+                  <div className="mt-6">
+                      <h5 className="text-white font-medium mb-3">תמונות שהועלו ({groomImages.images.length})</h5>
+                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                          {groomImages.images.map((image, index) => (
+                              <div key={index} className="relative group">
+                                  <img
+                                      src={URL.createObjectURL(image)}
+                                      alt={`Groom image ${index + 1}`}
+                                      className="w-full h-24 object-cover rounded-lg border-2 border-slate-600"
+                                  />
+                                  <button
+                                      onClick={() => removeGroomImage(index)}
+                                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-600"
+                                  >
+                                      <X className="w-4 h-4" />
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
+          </div>
+
+          <div className="mt-8 p-6 bg-slate-800/30 rounded-xl border border-slate-700">
+              <p className="text-slate-400 text-sm text-center">
+                  <span className="font-bold">טיפ:</span> המוזיקה ותמונות החתן הן אופציונליות בלבד. תוכלו לדלג עליהם אם תרצו.
+              </p>
+          </div>
+      </div>
+  );
+
   // Helper icon for empty state
   const FilmIcon = ({ className }: { className?: string }) => (
       <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -776,6 +1151,29 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                <label className="block text-sm font-medium text-slate-400 mb-1">קוד משחק</label>
                <input type="text" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} readOnly={!!initialCode} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-center font-mono text-lg" placeholder="ABCD" maxLength={6} />
              </div>
+             {!initialRole && (
+               <div className="flex items-center gap-3 p-3 bg-slate-700/30 rounded-xl border border-slate-600">
+                 <input
+                   type="checkbox"
+                   id="groomCheckbox"
+                   checked={isGroom}
+                   onChange={(e) => {
+                     const checked = e.target.checked;
+                     setIsGroom(checked);
+                     if (checked) {
+                       setJoinName('החתן');
+                     } else {
+                       setJoinName('');
+                     }
+                   }}
+                   className="w-5 h-5 rounded text-yellow-500 bg-slate-800 border-slate-600 focus:ring-yellow-500 focus:ring-2"
+                 />
+                 <label htmlFor="groomCheckbox" className="flex items-center gap-2 cursor-pointer select-none">
+                   <Crown className="w-5 h-5 text-yellow-500" />
+                   <span className="text-white font-medium">אני החתן</span>
+                 </label>
+               </div>
+             )}
            </div>
            <button onClick={handleJoinSubmit} disabled={!joinName || !joinCode} className={`w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg ${isGroom ? 'bg-gradient-to-r from-yellow-600 to-orange-600' : 'bg-blue-600 hover:bg-blue-500'}`}>
              {isGroom ? 'אני מוכן!' : (existingId ? 'התחבר מחדש' : 'הכנס למשחק')}
@@ -802,6 +1200,11 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${setupStep === 2 ? 'border-pink-400 bg-pink-900' : 'border-slate-600'}`}>2</div>
                           <span>משימות</span>
                       </div>
+                      <div className="w-12 h-px bg-slate-700"></div>
+                      <div className={`flex items-center gap-2 ${setupStep === 3 ? 'text-green-400 font-bold' : 'text-slate-500'}`}>
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${setupStep === 3 ? 'border-green-400 bg-green-900' : 'border-slate-600'}`}>3</div>
+                          <span>מוזיקה</span>
+                      </div>
                   </div>
                   <div>
                       <button onClick={saveConfig} className="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1">
@@ -827,6 +1230,7 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                   )}
 
                   {setupStep === 2 && renderMissionsStep()}
+                  {setupStep === 3 && renderMusicStep()}
 
               </div>
 
@@ -834,16 +1238,20 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
               <div className="mt-4 flex justify-between items-center px-4 shrink-0 bg-slate-900 py-2 border-t border-slate-800">
                   {setupStep === 1 ? (
                       <button onClick={() => setMode('SELECT')} className="text-slate-400 hover:text-white">ביטול</button>
-                  ) : (
+                  ) : setupStep === 2 ? (
                       <button onClick={() => setSetupStep(1)} className="text-slate-400 hover:text-white flex items-center gap-2">
                           <ArrowRight className="w-4 h-4" /> חזרה לוידאו
+                      </button>
+                  ) : (
+                      <button onClick={() => setSetupStep(2)} className="text-slate-400 hover:text-white flex items-center gap-2">
+                          <ArrowRight className="w-4 h-4" /> חזרה למשימות
                       </button>
                   )}
 
                   {setupStep === 1 ? (
                       <div className="flex items-center gap-4">
                           {questions.length === 0 && <span className="text-red-400 text-sm font-medium animate-pulse">הוסף לפחות שאלה אחת כדי להמשיך</span>}
-                          <button 
+                          <button
                             onClick={() => setSetupStep(2)}
                             disabled={questions.length === 0}
                             className="bg-purple-600 hover:bg-purple-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
@@ -851,8 +1259,17 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                               המשך למשימות <ArrowRight className="w-4 h-4 rotate-180" />
                           </button>
                       </div>
+                  ) : setupStep === 2 ? (
+                      <div className="flex items-center gap-4">
+                          <button
+                            onClick={() => setSetupStep(3)}
+                            className="bg-pink-600 hover:bg-pink-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg"
+                          >
+                              המשך למוזיקה (אופציונלי) <ArrowRight className="w-4 h-4 rotate-180" />
+                          </button>
+                      </div>
                   ) : (
-                      <button 
+                      <button
                         onClick={handleHostStart}
                         className="bg-green-600 hover:bg-green-500 text-white px-10 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-green-900/20"
                       >
