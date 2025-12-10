@@ -37,14 +37,35 @@ export interface QAPair {
   timestampStr?: string;
 }
 
+export interface AudioTrack {
+  file?: File;
+  youtubeUrl?: string;
+  youtubeVideoId?: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  volume: number;
+  fadeIn?: number;
+  fadeOut?: number;
+}
+
 export interface GameMusic {
-  lobby?: File;
-  question?: File;
-  groomAnswering?: File;
-  voting?: File;
-  reveal?: File;
-  mission?: File;
-  victory?: File;
+  lobby?: AudioTrack;
+  question?: AudioTrack;
+  groomAnswering?: AudioTrack;
+  voting?: AudioTrack;
+  reveal?: AudioTrack;
+  mission?: AudioTrack;
+  victory?: AudioTrack;
+}
+
+export interface TimerSettings {
+  groomAnswerTime: number; // seconds
+  playerVotingTime: number; // seconds
+  revealDelayTime: number; // seconds
+  missionDisplayTime: number; // seconds
+  victimSelectionTime: number; // seconds
+  consequenceDisplayTime: number; // seconds
 }
 
 export interface GroomImages {
@@ -86,6 +107,7 @@ export interface GameState {
   isRouletteSpinning?: boolean;
   gameMusic: GameMusic;
   groomImages: GroomImages; // Store groom images
+  timerSettings: TimerSettings; // Game timer configurations
 }
 
 // Network Messages

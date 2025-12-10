@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { GameState, GameStage, Player, Mission, QAPair, GameMusic, GroomImages } from './types';
+import { GameState, GameStage, Player, Mission, QAPair, GameMusic, GroomImages, TimerSettings } from './types';
 import SetupPhase from './components/SetupPhase';
 import GamePhase from './components/GamePhase';
 import SummaryPhase from './components/SummaryPhase';
@@ -32,7 +32,15 @@ const App: React.FC = () => {
     selectedVictimId: null,
     pastVictims: [],
     gameMusic: {}, // Initialize empty music object
-    groomImages: { images: [] } // Initialize empty groom images array
+    groomImages: { images: [] }, // Initialize empty groom images array
+    timerSettings: { // Default timer settings
+      groomAnswerTime: 30,
+      playerVotingTime: 10,
+      revealDelayTime: 2,
+      missionDisplayTime: 5,
+      victimSelectionTime: 5,
+      consequenceDisplayTime: 3
+    }
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -175,7 +183,7 @@ const App: React.FC = () => {
   }, [gameState.isHost, myPlayerId]);
 
   // HOST: Create Game
-  const handleHostGame = async (videos: Record<string, File>, missions: Mission[], questions: QAPair[], gameMusic?: GameMusic, groomImages?: GroomImages) => {
+  const handleHostGame = async (videos: Record<string, File>, missions: Mission[], questions: QAPair[], gameMusic?: GameMusic, groomImages?: GroomImages, timerSettings?: TimerSettings) => {
     console.log('🎮 Host starting game with', questions.length, 'questions');
     setIsLoading(true);
     try {
@@ -204,7 +212,15 @@ const App: React.FC = () => {
         activeMission: null,
         players: [], // Start with empty players list
         gameMusic: gameMusic || {},
-        groomImages: groomImages || { images: [] }
+        groomImages: groomImages || { images: [] },
+        timerSettings: timerSettings || {
+          groomAnswerTime: 30,
+          playerVotingTime: 10,
+          revealDelayTime: 2,
+          missionDisplayTime: 5,
+          victimSelectionTime: 5,
+          consequenceDisplayTime: 3
+        }
       }));
 
       isHostRef.current = true; // Update ref
