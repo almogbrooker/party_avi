@@ -4,6 +4,7 @@ import SetupPhase from './components/SetupPhase';
 import GamePhase from './components/GamePhase';
 import SummaryPhase from './components/SummaryPhase';
 import PlayerMobileView from './components/PlayerMobileView';
+import ErrorBoundary from './components/ErrorBoundary';
 import { initializePeer, connectToHost, setOnMessage, broadcastMessage, sendMessageToHost, disconnectAll, getPeerId } from './services/peerService';
 import { Sparkles, Wifi, Share2, Crown, Copy, User, Loader2, LogOut, Bot } from 'lucide-react';
 
@@ -445,14 +446,16 @@ const App: React.FC = () => {
           )}
 
           {gameState.stage === GameStage.SETUP && (
-            <SetupPhase 
-              onHostGame={handleHostGame}
-              onJoinGame={handleJoinGame}
-              isLoading={isLoading}
-              isJoining={isLoading}
-              initialCode={initialJoinCode}
-              initialRole={initialRole}
-            />
+            <ErrorBoundary>
+              <SetupPhase
+                onHostGame={handleHostGame}
+                onJoinGame={handleJoinGame}
+                isLoading={isLoading}
+                isJoining={isLoading}
+                initialCode={initialJoinCode}
+                initialRole={initialRole}
+              />
+            </ErrorBoundary>
           )}
 
           {gameState.stage === GameStage.LOBBY && (
