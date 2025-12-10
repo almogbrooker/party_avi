@@ -43,20 +43,39 @@ const getPeerJSConfig = () => {
       }
     };
   } else {
-    // Remote/tunnel access - use our tunneled PeerJS server
-    return {
-      debug: 3,
-      host: 'kitty-conditioning-qualifying-privacy.trycloudflare.com',
-      port: 443,
-      secure: true,
-      path: '/peerjs',
-      pingInterval: 5000,
-      keepAlive: true,
-      config: {
-        iceServers: ICE_SERVERS,
-        sdpSemantics: 'unified-plan'
-      }
-    };
+    // Remote/tunnel access - dynamically detect tunnel URL
+    // Extract tunnel domain from current URL
+    const currentHost = window.location.hostname;
+    if (currentHost.includes('trycloudflare.com')) {
+      return {
+        debug: 3,
+        host: currentHost,
+        port: 443,
+        secure: true,
+        path: '/peerjs',
+        pingInterval: 5000,
+        keepAlive: true,
+        config: {
+          iceServers: ICE_SERVERS,
+          sdpSemantics: 'unified-plan'
+        }
+      };
+    } else {
+      // Fallback to the original hardcoded tunnel URL
+      return {
+        debug: 3,
+        host: 'kitty-conditioning-qualifying-privacy.trycloudflare.com',
+        port: 443,
+        secure: true,
+        path: '/peerjs',
+        pingInterval: 5000,
+        keepAlive: true,
+        config: {
+          iceServers: ICE_SERVERS,
+          sdpSemantics: 'unified-plan'
+        }
+      };
+    }
   }
 };
 

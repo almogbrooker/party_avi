@@ -1,0 +1,9 @@
+tunnel: your-tunnel-id
+credentials-file: .cloudflare/credentials.json
+
+ingress:
+  - hostname: frontier-are-pressing-roller.trycloudflare.com
+    service: http://localhost:3000
+  - hostname: frontier-are-pressing-roller-9001.trycloudflare.com
+    service: http://localhost:9001
+  - service: http_status:404

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PeerJS Test</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <h1>PeerJS Connection Test</h1>
+    <button onclick="testConnection()">Test Connection</button>
+    <div id="status"></div>
+
+    <script>
+        function testConnection() {
+            const status = document.getElementById('status');
+            status.innerHTML = 'Testing...';
+
+            // Try to connect to local PeerJS server
+            fetch('http://localhost:9001/peerjs')
+                .then(response => {
+                    if (response.ok) {
+                        status.innerHTML = '✅ PeerJS server is accessible!';
+                        status.style.color = 'green';
+
+                        // Now try to create a Peer
+                        const peer = new Peer(null, {
+                            host: 'localhost',
+                            port: 9001,
+                            path: '/peerjs',
+                            debug: 3,
+                            secure: false
+                        });
+
+                        peer.on('open', (id) => {
+                            status.innerHTML += '<br>✅ Peer created with ID: ' + id;
+                        });
+
+                        peer.on('error', (err) => {
+                            status.innerHTML += '<br>❌ Peer error: ' + err.message;
+                            status.style.color = 'red';
+                        });
+                    } else {
+                        throw new Error('Server responded with ' + response.status);
+                    }
+                })
+                .catch(error => {
+                    status.innerHTML = '❌ Error: ' + error.message;
+                    status.style.color = 'red';
+                });
+        }
+    </script>
+</body>
+</html>
