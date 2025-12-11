@@ -6,11 +6,12 @@ import SummaryPhase from './components/SummaryPhase';
 import PlayerMobileView from './components/PlayerMobileView';
 import ErrorBoundary from './components/ErrorBoundary';
 import { initializePeer, connectToHost, setOnMessage, broadcastMessage, sendMessageToHost, disconnectAll, getPeerId } from './services/peerService';
-import { Sparkles, Wifi, Share2, Crown, Copy, User, Loader2, LogOut, Bot } from 'lucide-react';
+import { Sparkles, Wifi, Share2, Crown, Copy, User, Loader2, LogOut, Bot, RefreshCw, Download } from 'lucide-react';
+import { saveGameState, loadPersistedGameState, clearPersistedGameState, hasPersistedGameState, restoreGameState } from './utils/gameStatePersistence';
+import { storageManager } from './utils/storageManager';
+import { ImageComparator } from './utils/imageComparison';
 
-const generateGameCode = () => {
-  return Math.random().toString(36).substring(2, 6).toUpperCase();
-};
+const generateGameCode = () => Math.random().toString(36).slice(2, 6).toUpperCase(); // 4-char room code
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>({
@@ -26,6 +27,7 @@ const App: React.FC = () => {
     isPaused: false,
     roundPhase: 'QUESTION',
     currentVotes: {},
+    voteTimestamps: {},
     groomResult: null,
     roundLosers: [],
     activeMission: null,
@@ -48,6 +50,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   const [myPlayerId, setMyPlayerId] = useState<string>('');
+  const [isRestoringGame, setIsRestoringGame] = useState(false);
   
   const [initialJoinCode, setInitialJoinCode] = useState<string>('');
   const [initialRole, setInitialRole] = useState<'PLAYER' | 'GROOM'>('PLAYER');
@@ -82,18 +85,45 @@ const App: React.FC = () => {
               // Check if player exists (reconnection)
               const existingPlayer = prev.players.find(p => p.id === msg.payload.id);
 
+              // Also check if there's a player with the same name but different ID (reconnected with new ID)
+              const sameNamePlayer = prev.players.find(p => p.name === msg.payload.name && p.id !== msg.payload.id && p.isGroom === msg.payload.isGroom);
+
+              // Check for duplicate photos asynchronously (this won't block the join)
+              if (msg.payload.photo) {
+                prev.players.forEach(async (player) => {
+                  if (player.id !== msg.payload.id && player.photo && player.name !== msg.payload.name) {
+                    try {
+                      const comparison = await ImageComparator.compareImages(msg.payload.photo!, player.photo);
+                      if (comparison.isSame && comparison.confidence > 0.95) {
+                        console.warn(`⚠️ Duplicate photo detected: ${msg.payload.name} has the same photo as ${player.name} (confidence: ${comparison.confidence})`);
+                        // Could optionally notify host or handle this case
+                      }
+                    } catch (error) {
+                      console.error('Error comparing photos:', error);
+                    }
+                  }
+                });
+              }
+
               const newPlayer: Player = {
                 id: msg.payload.id,
                 name: msg.payload.name,
                 // Preserve score/drinks if exists, else 0
-                score: existingPlayer ? existingPlayer.score : 0,
-                drinks: existingPlayer ? existingPlayer.drinks : 0,
+                score: existingPlayer ? existingPlayer.score : (sameNamePlayer ? sameNamePlayer.score : 0),
+                drinks: existingPlayer ? existingPlayer.drinks : (sameNamePlayer ? sameNamePlayer.drinks : 0),
                 isGroom: msg.payload.isGroom,
-                photo: msg.payload.photo || existingPlayer?.photo, // Update photo if provided, or keep old
+                photo: msg.payload.photo || existingPlayer?.photo || sameNamePlayer?.photo, // Update photo if provided, or keep old
                 isBot: false
               };
 
-              const filtered = prev.players.filter(p => p.id !== newPlayer.id);
+              // Remove both the exact ID match and same name player to prevent duplicates
+              const filtered = prev.players.filter(p => {
+                // Remove player if:
+                // 1. Same ID (exact match)
+                // 2. Same name AND same groom status (same person with new ID)
+                // This ensures we don't have duplicates
+                return p.id !== newPlayer.id && !(p.name === msg.payload.name && p.isGroom === msg.payload.isGroom);
+              });
 
               // If new player is groom, remove any existing groom from the list
               const finalPlayers = msg.payload.isGroom
@@ -102,9 +132,14 @@ const App: React.FC = () => {
 
               const newState = { ...prev, players: [...finalPlayers, newPlayer] };
 
-              console.log('✅ New players list after join:', newState.players.map(p => `${p.name} (${p.id})`));
+              console.log('🔍 Before filtering - Players:', prev.players.map(p => `${p.name} (${p.id}) Groom:${p.isGroom}`));
+              console.log('🔍 New player joining:', `${msg.payload.name} (${msg.payload.id}) Groom:${msg.payload.isGroom}`);
+              console.log('🔍 Same name player found:', sameNamePlayer ? `${sameNamePlayer.name} (${sameNamePlayer.id})` : 'None');
+              console.log('🔍 Players after filter (before adding new):', filtered.map(p => `${p.name} (${p.id})`));
+              console.log('✅ New players list after join:', newState.players.map(p => `${p.name} (${p.id}) Groom:${p.isGroom}`));
               console.log('📡 Broadcasting state update to all connections');
-              broadcastStateUpdate(newState);
+              // Broadcast async without blocking
+              broadcastStateUpdate(newState).catch(console.error);
               return newState;
             });
           }
@@ -114,9 +149,11 @@ const App: React.FC = () => {
             setGameState(prev => {
               const newState = {
                 ...prev,
-                currentVotes: { ...prev.currentVotes, [msg.payload.playerId]: msg.payload.vote }
+                currentVotes: { ...prev.currentVotes, [msg.payload.playerId]: msg.payload.vote },
+                voteTimestamps: { ...prev.voteTimestamps, [msg.payload.playerId]: Date.now() }
               };
-              broadcastStateUpdate(newState);
+              // Broadcast async without blocking
+              broadcastStateUpdate(newState).catch(console.error);
               return newState;
             });
           }
@@ -125,7 +162,8 @@ const App: React.FC = () => {
           if (gameState.isHost) {
               setGameState(prev => {
                   const newState = { ...prev, groomAnswer: msg.payload.answer };
-                  broadcastStateUpdate(newState);
+                  // Broadcast async without blocking
+                  broadcastStateUpdate(newState).catch(console.error);
                   return newState;
               });
           }
@@ -142,7 +180,8 @@ const App: React.FC = () => {
                           ? prev.pastVictims 
                           : [...prev.pastVictims, msg.payload.victimId]
                   };
-                  broadcastStateUpdate(newState);
+                  // Broadcast async without blocking
+              broadcastStateUpdate(newState).catch(console.error);
                   return newState;
               });
           }
@@ -157,10 +196,18 @@ const App: React.FC = () => {
               const updatedPlayers = msg.payload.players || [];
               const meInUpdate = updatedPlayers.find(p => p.id === myPlayerId);
 
-              // If I'm not in the update, add me from previous state
-              const finalPlayers = meInUpdate
-                ? updatedPlayers
-                : [...updatedPlayers, prev.players.find(p => p.id === myPlayerId)].filter(Boolean);
+              // If I'm not in the update, check if there's a player with my name (reconnected with new ID)
+              const meByName = updatedPlayers.find(p => p.name === prev.players.find(pl => pl.id === myPlayerId)?.name);
+
+              // If I'm not in the update by ID or name, add me from previous state
+              // Also remove any duplicates of me by name
+              const filteredPlayers = updatedPlayers.filter(p =>
+                !(prev.players.find(pl => pl.id === myPlayerId) && p.name === prev.players.find(pl => pl.id === myPlayerId)?.name && p.id !== myPlayerId)
+              );
+
+              const finalPlayers = meInUpdate || meByName
+                ? filteredPlayers
+                : [...filteredPlayers, prev.players.find(p => p.id === myPlayerId)].filter(Boolean);
 
               const newState = {
                 ...prev,
@@ -184,14 +231,33 @@ const App: React.FC = () => {
   }, [gameState.isHost, myPlayerId]);
 
   // HOST: Create Game
-  const handleHostGame = async (videos: Record<string, File>, missions: Mission[], questions: QAPair[], gameMusic?: GameMusic, groomImages?: GroomImages, timerSettings?: TimerSettings) => {
+  const handleHostGame = async (videos: Record<string, File>, missions: Mission[], questions: QAPair[], gameMusic?: GameMusic, groomImages?: GroomImages, timerSettings?: TimerSettings, gameCode?: string) => {
     console.log('🎮 Host starting game with', questions.length, 'questions');
     setIsLoading(true);
     try {
-      const code = generateGameCode();
-      console.log('🔑 Generated game code:', code);
+      const code = gameCode || generateGameCode();
+      console.log('🔑 Using game code:', code);
       // Host uses the game code as peer ID for easy connection
       const hostPeerId = await initializePeer(code);
+
+      // Save videos to IndexedDB for persistence
+      await storageManager.init();
+      for (const [videoId, videoFile] of Object.entries(videos)) {
+        await storageManager.storeFile('videos', videoId, videoFile);
+        console.log(`💾 Saved video ${videoId} to IndexedDB`);
+      }
+
+      // Save music files to IndexedDB for persistence
+      if (gameMusic) {
+        for (const [phase, music] of Object.entries(gameMusic)) {
+          // Check if music is a File object or has a file property
+          const file = music instanceof File ? music : music?.file;
+          if (file) {
+            await storageManager.storeFile('music', phase, file);
+            console.log(`🎵 Saved music for ${phase} to IndexedDB`);
+          }
+        }
+      }
 
       // Host is NOT a player - only manages the game
       setMyPlayerId(hostPeerId);
@@ -210,6 +276,7 @@ const App: React.FC = () => {
         selectedVictimId: null,
         roundLosers: [],
         currentVotes: {},
+        voteTimestamps: {},
         activeMission: null,
         players: [], // Start with empty players list
         gameMusic: gameMusic || {},
@@ -247,12 +314,13 @@ const App: React.FC = () => {
     const newState = {
         stage: GameStage.PLAYING,
         players: gameState.players, // Keep players as is
-        roundPhase: 'QUESTION'
+        roundPhase: 'INTRO'
     };
     console.log('📤 Broadcasting STATE_UPDATE:', newState);
     setGameState(prev => {
       const merged = { ...prev, ...newState };
-      broadcastStateUpdate(merged);
+      // Broadcast async without blocking
+      broadcastStateUpdate(merged).catch(console.error);
       return merged;
     });
   };
@@ -274,7 +342,7 @@ const App: React.FC = () => {
     setConnectionStatus('connecting');
 
     try {
-      const conn = await connectToHost(code, { name });
+      const conn = await connectToHost(code, { name }, existingId);
 
       // Use the local peer ID, not the connection's remote ID
       const realId = getPeerId();
@@ -297,12 +365,44 @@ const App: React.FC = () => {
     }
   };
 
-  // Helper function to broadcast state without host-only fields to prevent heavy payloads and host mirroring on clients
-  const broadcastStateUpdate = (state: GameState) => {
-    const { videos, ...rest } = state;
-    broadcastMessage({ 
-      type: 'STATE_UPDATE', 
-      payload: { ...rest, isHost: false, videos: {} } 
+  // Helper function to broadcast state without host-only fields and heavy data
+  const broadcastStateUpdate = async (state: GameState) => {
+    const { videos, gameMusic, groomImages, ...rest } = state;
+
+    // Strip photos to avoid huge payloads / CORS issues
+    const playersSlim = (rest.players || []).map(p => {
+      const { photo, ...slim } = p;
+      return slim;
+    });
+
+    // Slim music/images metadata only
+    const serializableGameMusic = gameMusic ? Object.keys(gameMusic).reduce((acc, key) => {
+      const music = gameMusic[key];
+      acc[key] = music ? {
+        name: (music as any).name || (music as any).file?.name,
+        youtubeUrl: (music as any).youtubeUrl,
+        youtubeVideoId: (music as any).youtubeVideoId
+      } : null;
+      return acc;
+    }, {} as any) : {};
+
+    const serializableGroomImages = groomImages ? Object.keys(groomImages).reduce((acc, key) => {
+      acc[key] = groomImages[key]?.name ? { name: groomImages[key]?.name, url: groomImages[key]?.url } : null;
+      return acc;
+    }, {} as any) : {};
+
+    const stateToBroadcast = {
+      ...rest,
+      players: playersSlim,
+      videos: {},
+      isHost: false,
+      gameMusic: serializableGameMusic,
+      groomImages: serializableGroomImages
+    };
+
+    broadcastMessage({
+      type: 'STATE_UPDATE',
+      payload: stateToBroadcast
     });
   };
 
@@ -316,11 +416,22 @@ const App: React.FC = () => {
 
   const handleGameEnd = () => {
     handleHostUpdateState({ stage: GameStage.SUMMARY });
+    // Clear persisted state when game ends
+    clearPersistedGameState();
   };
 
   const handleRestart = () => {
     disconnectAll();
-    window.location.href = window.location.origin + window.location.pathname; 
+    clearPersistedGameState();
+    window.location.href = window.location.origin + window.location.pathname;
+  };
+
+  const handleLeaveGame = () => {
+    if (confirm('האם אתה בטוח שברצונך לעזוב את המשחק? כל ההתקדמות יאבדו.')) {
+      disconnectAll();
+      clearPersistedGameState();
+      window.location.href = window.location.origin + window.location.pathname;
+    }
   };
 
   const generateShareLink = (role: 'player' | 'groom') => {
@@ -391,6 +502,46 @@ const App: React.FC = () => {
       });
   };
 
+  // Download all player photos as a ZIP file
+  const downloadAllPhotos = async () => {
+    try {
+      const playersWithPhotos = gameState.players.filter(p => p.photo && !p.isBot);
+
+      if (playersWithPhotos.length === 0) {
+        alert('אין תמונות להורדה');
+        return;
+      }
+
+      // Import JSZip dynamically
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      // Add each photo to the ZIP
+      playersWithPhotos.forEach(player => {
+        // Extract base64 data (remove data:image/jpeg;base64, prefix)
+        const base64Data = player.photo!.split(',')[1];
+        zip.file(`${player.name.replace(/[^a-z0-9]/gi, '_')}_${player.id}.jpg`, base64Data, { base64: true });
+      });
+
+      // Generate ZIP file
+      const content = await zip.generateAsync({ type: 'blob' });
+
+      // Create download link
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(content);
+      link.download = `player_photos_${gameState.gameCode || 'game'}_${new Date().toISOString().split('T')[0]}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+
+      alert(`הורדו ${playersWithPhotos.length} תמונות בהצלחה!`);
+    } catch (error) {
+      console.error('Error downloading photos:', error);
+      alert('שגיאה בהורדת התמונות');
+    }
+  };
+
   // Determine container classes based on stage
   const isPlaying = gameState.stage === GameStage.PLAYING;
   
@@ -404,6 +555,119 @@ const App: React.FC = () => {
   const containerClasses = isPlaying
     ? "relative w-full h-screen overflow-hidden bg-black"
     : "relative z-10 container mx-auto px-4 py-6 min-h-screen flex flex-col";
+
+  // Lobby music effect - plays only for host in LOBBY stage
+  const lobbyAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    // Host-only: play lobby music while waiting
+    if (gameState.isHost && gameState.stage === GameStage.LOBBY && gameState.gameMusic?.lobby) {
+      console.log('🎵 Starting lobby music in LOBBY stage');
+      if (!lobbyAudioRef.current) {
+        lobbyAudioRef.current = new Audio(URL.createObjectURL(gameState.gameMusic.lobby));
+        lobbyAudioRef.current.loop = true;
+        lobbyAudioRef.current.volume = 0.4;
+        console.log('🎵 Lobby music audio created:', gameState.gameMusic.lobby.name);
+      }
+
+      lobbyAudioRef.current.play().then(() => {
+        console.log('🎵 Lobby music started successfully');
+      }).catch(err => {
+        console.log('❌ Lobby music autoplay blocked, waiting for user interaction:', err);
+        // Try to play after user interaction
+        const handleUserInteraction = () => {
+          if (lobbyAudioRef.current) {
+            lobbyAudioRef.current.play().then(() => {
+              console.log('🎵 Lobby music started after user interaction');
+            }).catch(err => {
+              console.error('❌ Still failed to play lobby music:', err);
+            });
+          }
+          document.removeEventListener('click', handleUserInteraction);
+          document.removeEventListener('keydown', handleUserInteraction);
+        };
+        document.addEventListener('click', handleUserInteraction, { once: true });
+        document.addEventListener('keydown', handleUserInteraction, { once: true });
+      });
+    } else {
+      // Stop music if not in lobby or not host
+      if (lobbyAudioRef.current) {
+        console.log('🎵 Stopping lobby music');
+        lobbyAudioRef.current.pause();
+        lobbyAudioRef.current.currentTime = 0;
+      }
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (lobbyAudioRef.current) {
+        lobbyAudioRef.current.pause();
+        lobbyAudioRef.current = null;
+      }
+    };
+  }, [gameState.isHost, gameState.stage, gameState.gameMusic?.lobby]);
+
+  // Save game state whenever it changes (except in SETUP)
+  useEffect(() => {
+    if (gameState.stage !== GameStage.SETUP && myPlayerId) {
+      saveGameState(gameState, myPlayerId, gameState.isHost);
+    }
+  }, [gameState, myPlayerId]);
+
+  // Check for persisted game state on mount
+  useEffect(() => {
+    const checkPersistedState = async () => {
+      // Skip if URL has code parameter (joining fresh)
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('code')) return;
+
+      const persisted = loadPersistedGameState();
+      if (persisted) {
+        console.log('🔄 Found persisted game state, attempting to restore...');
+        setIsRestoringGame(true);
+
+        try {
+          const restored = await restoreGameState(persisted);
+
+          // Set the restored state
+          setMyPlayerId(restored.myPlayerId);
+          isHostRef.current = restored.isHost;
+
+          setGameState(prev => ({
+            ...prev,
+            ...restored,
+          }));
+
+          console.log('✅ Game state restored successfully');
+
+          // Attempt to reconnect
+          if (restored.isHost && restored.gameCode) {
+            // Host reinitializes with same ID
+            await initializePeer(restored.myPlayerId);
+            setConnectionStatus('connected');
+          } else if (!restored.isHost && restored.gameCode) {
+            // Player attempts to reconnect
+            setConnectionStatus('connecting');
+            try {
+              await connectToHost(restored.gameCode, restored.myPlayerId);
+              setConnectionStatus('connected');
+            } catch (error) {
+              console.error('Failed to reconnect to host:', error);
+              setConnectionStatus('disconnected');
+              setError('Failed to reconnect to the game. The game may have ended.');
+            }
+          }
+        } catch (error) {
+          console.error('❌ Failed to restore game state:', error);
+          clearPersistedGameState();
+        } finally {
+          setIsRestoringGame(false);
+        }
+      }
+    };
+
+    checkPersistedState();
+  }, []);
 
   return (
     <div className={`min-h-screen bg-[#0f172a] text-slate-100 font-rubik selection:bg-purple-500 selection:text-white ${isPlaying ? 'overflow-hidden' : 'overflow-x-hidden'}`} dir="rtl">
@@ -426,18 +690,29 @@ const App: React.FC = () => {
             </div>
             
             {gameState.stage !== GameStage.SETUP && (
-                <div className="flex items-center gap-4 text-xs font-medium text-slate-400">
-                <div className={`flex items-center gap-1 ${connectionStatus === 'connected' ? 'text-green-400' : 'text-red-400'}`}>
-                    <Wifi className="w-4 h-4" />
-                    <span>{connectionStatus === 'connected' ? 'מחובר' : (connectionStatus === 'connecting' ? 'מתחבר...' : 'מנותק')}</span>
-                </div>
-                {gameState.gameCode && <div className="bg-slate-800 px-3 py-1 rounded-full border border-slate-700 font-mono">CODE: {gameState.gameCode}</div>}
-                </div>
+                <button
+                    onClick={handleLeaveGame}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-700 hover:bg-red-900/30 hover:text-red-400 hover:border-red-500/50 transition-all text-sm"
+                    title="עזוב את המשחק"
+                >
+                    <LogOut className="w-4 h-4" />
+                    <span className="hidden sm:inline">עזוב</span>
+                </button>
             )}
             </header>
         )}
 
         <main className={`flex-grow flex flex-col ${!isPlaying ? 'justify-center' : 'h-full'}`}>
+          {isRestoringGame && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+              <div className="bg-slate-800 p-8 rounded-2xl border border-slate-600 shadow-2xl text-center">
+                <RefreshCw className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
+                <h2 className="text-2xl font-bold text-white mb-2">משחזר את המשחק...</h2>
+                <p className="text-slate-400">אנא המתן, המשחק ייטען בקרוב.</p>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-6 p-4 bg-red-900/50 border border-red-500 rounded-lg text-red-200 text-center animate-shake z-50 flex items-center justify-between relative">
               <span>{error}</span>
@@ -459,14 +734,21 @@ const App: React.FC = () => {
           )}
 
           {gameState.stage === GameStage.LOBBY && (
-             <div className="text-center space-y-8 animate-fade-in w-full max-w-4xl mx-auto my-auto">
-                <div className="space-y-2">
+             <div className="text-center space-y-6 animate-fade-in w-full max-w-4xl mx-auto my-auto h-full flex flex-col">
+                <div className="space-y-2 flex-shrink-0">
                     <h1 className="text-4xl font-black text-white">לובי המתנה</h1>
                     <p className="text-slate-400">שתפו את הקישורים כדי להתחיל</p>
                 </div>
 
                 {gameState.isHost && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-shrink-0">
+                        <div className="md:col-span-2 bg-gradient-to-r from-slate-900 to-slate-800 p-6 rounded-2xl border border-purple-500/30 flex flex-col items-center gap-3 shadow-lg">
+                            <div className="text-sm text-slate-400">קוד חדר</div>
+                            <div className="text-4xl font-black tracking-[0.35em] text-white bg-slate-950 px-6 py-3 rounded-xl border border-purple-500/40 min-w-[220px]">
+                                {gameState.gameCode || '----'}
+                            </div>
+                            <p className="text-xs text-slate-500">שתפו את הקוד או את הקישורים למטה</p>
+                        </div>
                         <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-2xl border border-yellow-500/30 flex flex-col items-center gap-4 shadow-lg">
                             <Crown className="w-10 h-10 text-yellow-400" />
                             <div className="text-center">
@@ -494,13 +776,13 @@ const App: React.FC = () => {
                     </div>
                 )}
                 
-                <div className="bg-slate-800/50 p-8 rounded-2xl border border-slate-700 min-h-[200px]">
+                <div className="bg-slate-800/50 p-8 rounded-2xl border border-slate-700 flex-grow flex flex-col min-h-0">
                    <h3 className="text-xl font-bold mb-4 flex items-center justify-center gap-2">מי כבר כאן? ({gameState.players.length})</h3>
-                   <div className="flex flex-wrap justify-center gap-4">
+                   <div className="flex-grow flex flex-wrap justify-center items-start gap-4 content-start min-h-0">
                       {gameState.players.map(p => (
                         <div key={p.id} className="flex flex-col items-center gap-2 animate-pop">
-                          <div className={`relative w-16 h-16 rounded-full border-2 overflow-hidden ${p.isGroom ? 'border-yellow-500' : 'border-slate-500'} ${p.isBot ? 'border-dashed opacity-70' : ''}`}>
-                             {p.photo ? <img src={p.photo} className="w-full h-full object-cover" alt={p.name} /> : <div className={`w-full h-full flex items-center justify-center ${p.isGroom ? 'bg-yellow-900/50' : 'bg-slate-700'}`}>{p.isGroom ? <Crown className="w-8 h-8 text-yellow-400" /> : <User className="w-8 h-8 text-slate-400" />}</div>}
+                          <div className={`relative w-28 h-28 rounded-full border-4 overflow-hidden ${p.isGroom ? 'border-yellow-500' : 'border-slate-500'} ${p.isBot ? 'border-dashed opacity-70' : ''}`}>
+                             {p.photo ? <img src={p.photo} className="w-full h-full object-cover" alt={p.name} /> : <div className={`w-full h-full flex items-center justify-center ${p.isGroom ? 'bg-yellow-900/50' : 'bg-slate-700'}`}>{p.isGroom ? <Crown className="w-10 h-10 text-yellow-400" /> : <User className="w-10 h-10 text-slate-400" />}</div>}
                           </div>
                           <span className={`text-sm font-medium ${p.isGroom ? 'text-yellow-400' : 'text-slate-300'}`}>{p.name}</span>
                           {p.isBot && <span className="text-xs bg-slate-700 px-2 py-0.5 rounded-full text-slate-400 uppercase">Bot</span>}
@@ -511,14 +793,23 @@ const App: React.FC = () => {
                 </div>
 
                 {gameState.isHost ? (
-                    <div className="flex flex-col items-center gap-4">
+                    <div className="flex flex-col items-center gap-4 flex-shrink-0">
                         <button onClick={handleStartRound} disabled={gameState.players.length === 0} className="w-full md:w-auto bg-green-600 hover:bg-green-500 text-white font-bold py-4 px-12 rounded-full text-xl disabled:opacity-50 transition-all transform hover:scale-105 shadow-xl">התחל את המשחק!</button>
+                        {gameState.players.some(p => p.photo) && (
+                            <button
+                                onClick={downloadAllPhotos}
+                                className="text-slate-500 hover:text-white text-sm flex items-center gap-2 hover:bg-white/5 px-4 py-2 rounded-full transition-colors border border-transparent hover:border-slate-600"
+                                title="הורד את כל התמונות"
+                            >
+                                <Download className="w-4 h-4" /> הורד תמונות
+                            </button>
+                        )}
                         <button onClick={addBots} className="text-slate-500 hover:text-white text-sm flex items-center gap-2 hover:bg-white/5 px-4 py-2 rounded-full transition-colors border border-transparent hover:border-slate-600">
                             <Bot className="w-4 h-4" /> הוסף בוט לבדיקה
                         </button>
                     </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center gap-4 animate-pulse mt-8">
+                  <div className="flex flex-col items-center justify-center gap-4 animate-pulse mt-8 flex-shrink-0">
                      {connectionStatus === 'connecting' ? (
                         <>
                             <div className="bg-blue-900/20 text-blue-300 py-3 px-6 rounded-full inline-flex items-center gap-3">

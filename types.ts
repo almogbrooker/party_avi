@@ -95,10 +95,12 @@ export interface GameState {
   isPaused: boolean; // Global pause state
 
   // Real-time round state
-  roundPhase: 'QUESTION' | 'GROOM_ANSWERING' | 'GROOM_WRITING' | 'VOTING' | 'REVEAL' | 'JUDGMENT' | 'CONSEQUENCE' | 'MISSION_EXECUTION' | 'VICTIM_SELECTION' | 'VICTIM_REVEAL';
+  roundPhase: 'INTRO' | 'QUESTION' | 'GROOM_ANSWERING' | 'GROOM_WRITING' | 'VOTING' | 'REVEAL' | 'JUDGMENT' | 'CONSEQUENCE' | 'MISSION_EXECUTION' | 'VICTIM_SELECTION' | 'VICTIM_REVEAL' | 'DRINK_BREAK';
   currentVotes: Record<string, boolean>; // playerId -> true (He's Right) / false (He's Wrong)
+  voteTimestamps: Record<string, number>; // playerId -> timestamp when they voted
   groomResult: boolean | null; // Did the groom get it right?
   roundLosers: string[]; // IDs of players who lost this round
+  everyoneCorrect?: boolean; // Flag to indicate if everyone voted correctly (last voter loses)
   activeMission: Mission | null;
   groomAnswer: string | null; // The text answer provided by the groom
   selectedVictimId: string | null;

@@ -1,0 +1,28 @@
+╔════════════════════════════════════════════════════════════════╗
+║                    🎮 BACHELOR PARTY GAME 🎮                   ║
+║                    ✅ FIXED AND RUNNING ✅                      ║
+╚════════════════════════════════════════════════════════════════╝
+
+🌐 GAME URL (Share with players):
+https://levy-douglas-solomon-publicity.trycloudflare.com
+
+🔗 PEERJS SERVER URL (Configured automatically):
+https://misc-thesaurus-farms-tests.trycloudflare.com
+
+📱 LOCAL URLs (For the host):
+• App:      http://localhost:3000/
+• PeerJS:   http://localhost:9001/
+
+✅ Fixes Applied:
+1. Fixed File object serialization in broadcastStateUpdate
+2. Configured separate tunnels for app and PeerJS
+3. Updated PeerJS to use environment variables
+4. Server restarted with new configuration
+
+Status: Both services are running and should work for remote players!
+Generated: Wed Dec 10 2025 12:06:00 GMT+0200
+
+Instructions for players:
+1. Use the Game URL to join the game
+2. The app will automatically connect to the PeerJS server
+3. No special configuration needed - just click and play!

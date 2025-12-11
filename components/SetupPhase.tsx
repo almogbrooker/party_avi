@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Mission, QAPair, VideoAsset, GameMusic, GroomImages, TimerSettings } from '../types';
-import { Video, ListTodo, PlayCircle, Loader2, Smartphone, Monitor, ArrowRight, UserPlus, Clock, Trash2, Plus, Play, Crown, Camera, Image as ImageIcon, X, Aperture, User, Save, Upload, FileJson, Sparkles, Check, GripVertical, Settings2, Timer, AlertCircle, RefreshCw, LogOut, Music, Volume2, Settings } from 'lucide-react';
+import { Video, ListTodo, PlayCircle, Loader2, Smartphone, Monitor, ArrowRight, UserPlus, Clock, Trash2, Plus, Play, Crown, Camera, Image as ImageIcon, X, Aperture, User, Save, Upload, FileJson, Sparkles, Check, GripVertical, Settings2, Timer, AlertCircle, RefreshCw, LogOut, Music, Volume2, Settings, Download, FolderOpen, Edit } from 'lucide-react';
 import { analyzeVideoForQA } from '../services/geminiService';
 import AudioEditor from './AudioEditor';
 import TimerConfig from './TimerConfig';
+import { saveGameConfig, loadGameConfig, loadMusicFiles, loadGroomImages, hasSavedConfig, clearSavedConfig } from '../utils/gameConfigStorage';
 
 interface SetupPhaseProps {
-  onHostGame: (videos: Record<string, File>, missions: Mission[], questions: QAPair[], gameMusic?: GameMusic, groomImages?: GroomImages, timerSettings?: TimerSettings) => void;
+  onHostGame: (videos: Record<string, File>, missions: Mission[], questions: QAPair[], gameMusic?: GameMusic, groomImages?: GroomImages, timerSettings?: TimerSettings, gameCode?: string) => void;
   onJoinGame: (name: string, code: string, isGroom?: boolean, photo?: string, existingId?: string) => void;
   isLoading: boolean;
   isJoining: boolean;
@@ -56,6 +57,8 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
     { id: 'm3', text: 'לשתות כוס מים ללא ידיים' },
   ]);
   const [missionInput, setMissionInput] = useState('');
+  const [editingMission, setEditingMission] = useState<string | null>(null);
+  const [editMissionText, setEditMissionText] = useState('');
 
   // MUSIC STATE
   const [gameMusic, setGameMusic] = useState<GameMusic>({});
@@ -95,6 +98,8 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
+  // Lobby music is now handled in App.tsx during the LOBBY stage
+
   // Load from LocalStorage on mount
   useEffect(() => {
     try {
@@ -109,7 +114,39 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
     } catch (e) {
         console.error("Failed to load saved player data", e);
     }
+
+    // Load saved game configuration
+    const savedConfig = loadGameConfig();
+    if (savedConfig) {
+        console.log('📂 Loading saved game configuration...');
+
+        // Load game settings
+        setTimerSettings(savedConfig.gameSettings);
+
+        // Load music files
+        loadMusicFiles(savedConfig.musicConfig).then(loadedMusic => {
+            setGameMusic(loadedMusic);
+        });
+
+        // Load groom images
+        loadGroomImages(savedConfig.groomImages).then(loadedImages => {
+            setGroomImages(loadedImages);
+        });
+
+        // Load custom questions
+        if (savedConfig.customQuestions && savedConfig.customQuestions.length > 0) {
+            setQuestions(savedConfig.customQuestions.map((text, index) => ({
+                id: `saved_${index}`,
+                text,
+                category: 'CUSTOM',
+                // Find matching answer if exists
+                answer: savedConfig.customQuestions.find(q => q === text) || 'לא צוינה תשובה'
+            })) as QAPair[]);
+        }
+    }
   }, []);
+
+  // Lobby music is now handled in App.tsx during the LOBBY stage
 
   // Auto-switch to join mode if code is provided
   useEffect(() => {
@@ -226,7 +263,7 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
       }
 
       setGroomImages(prev => ({
-        images: [...prev.images, ...validImageFiles]
+        images: [...(prev?.images || []), ...validImageFiles]
       }));
     }
   };
@@ -340,19 +377,56 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
   const removeMission = (id: string) => {
     setMissions(missions.filter(m => m.id !== id));
   };
+  const startEditMission = (id: string, currentText: string) => {
+    setEditingMission(id);
+    setEditMissionText(currentText);
+  };
+  const saveEditMission = () => {
+    if (editMissionText.trim() && editingMission) {
+      setMissions(missions.map(m =>
+        m.id === editingMission
+          ? { ...m, text: editMissionText.trim() }
+          : m
+      ));
+      setEditingMission(null);
+      setEditMissionText('');
+    }
+  };
+  const cancelEditMission = () => {
+    setEditingMission(null);
+    setEditMissionText('');
+  };
 
   // Final Start
-  const handleHostStart = () => {
+  const handleHostStart = async () => {
       if (videoAssets.length === 0 || questions.length === 0) {
           alert("חובה להעלות לפחות סרטון אחד ושאלה אחת.");
           return;
+      }
+
+      // Save the complete game configuration
+      const gameCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+
+      try {
+          await saveGameConfig(
+              gameCode,
+              timerSettings,
+              gameMusic,
+              groomImages,
+              undefined, // video URL - not needed as we're using actual files
+              questions.map(q => q.text) // Save only question text
+          );
+          console.log('✅ Game configuration saved automatically');
+      } catch (error) {
+          console.error('⚠️ Failed to save game configuration:', error);
+          // Continue with game start even if save fails
       }
 
       // Convert assets to map
       const videoMap: Record<string, File> = {};
       videoAssets.forEach(v => videoMap[v.id] = v.file);
 
-      onHostGame(videoMap, missions, questions, gameMusic, groomImages, timerSettings);
+      onHostGame(videoMap, missions, questions, gameMusic, groomImages, timerSettings, gameCode);
   };
 
   // Save/Load Config
@@ -654,14 +728,14 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
   };
 
   const renderMissionsStep = () => (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full pb-20">
-          <div className="flex flex-col h-full bg-slate-800/50 rounded-2xl p-6 border border-slate-700">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full min-h-0">
+          <div className="flex flex-col h-full bg-slate-800/50 rounded-2xl p-6 border border-slate-700 min-h-0">
                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                    <ListTodo className="w-5 h-5 text-pink-500" />
                    המשימות שנבחרו ({missions.length})
                </h3>
-               
-               <div className="flex gap-2 mb-4">
+
+               <div className="flex gap-2 mb-4 flex-shrink-0">
                   <input
                     type="text"
                     value={missionInput}
@@ -673,23 +747,54 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                   <button onClick={addMission} className="bg-pink-600 hover:bg-pink-500 text-white px-4 rounded-lg font-bold">הוסף</button>
                </div>
 
-               <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2">
+               <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2 min-h-0">
                    {missions.map(m => (
                        <div key={m.id} className="bg-slate-900 p-3 rounded-lg border border-slate-700 flex justify-between items-center group hover:border-pink-500/30">
-                           <span className="text-sm text-slate-200">{m.text}</span>
-                           <button onClick={() => removeMission(m.id)} className="text-slate-600 hover:text-red-500"><X className="w-4 h-4"/></button>
+                           {editingMission === m.id ? (
+                               <div className="flex-1 flex gap-2">
+                                   <input
+                                       type="text"
+                                       value={editMissionText}
+                                       onChange={(e) => setEditMissionText(e.target.value)}
+                                       onKeyDown={(e) => {
+                                           if (e.key === 'Enter') saveEditMission();
+                                           if (e.key === 'Escape') cancelEditMission();
+                                       }}
+                                       className="flex-1 bg-slate-800 border border-pink-500 rounded px-2 py-1 text-sm text-white focus:outline-none"
+                                       autoFocus
+                                   />
+                                   <button onClick={saveEditMission} className="text-green-500 hover:text-green-400">
+                                       <Check className="w-4 h-4" />
+                                   </button>
+                                   <button onClick={cancelEditMission} className="text-red-500 hover:text-red-400">
+                                       <X className="w-4 h-4" />
+                                   </button>
+                               </div>
+                           ) : (
+                               <>
+                                   <span className="text-sm text-slate-200">{m.text}</span>
+                                   <div className="flex gap-1">
+                                       <button onClick={() => startEditMission(m.id, m.text)} className="text-slate-600 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                           <Edit className="w-4 h-4" />
+                                       </button>
+                                       <button onClick={() => removeMission(m.id)} className="text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                           <X className="w-4 h-4" />
+                                       </button>
+                                   </div>
+                               </>
+                           )}
                        </div>
                    ))}
                    {missions.length === 0 && <div className="text-center text-slate-500 mt-10">אין משימות. בחר מהרשימה או הוסף לבד.</div>}
                </div>
           </div>
 
-          <div className="flex flex-col h-full bg-slate-800/50 rounded-2xl p-6 border border-slate-700">
+          <div className="flex flex-col h-full bg-slate-800/50 rounded-2xl p-6 border border-slate-700 min-h-0">
                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                    <Sparkles className="w-5 h-5 text-yellow-500" />
                    מאגר רעיונות
                </h3>
-               <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2">
+               <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2 min-h-0">
                     {PREDEFINED_MISSIONS.map((text, i) => {
                          const isSelected = missions.some(m => m.text === text);
                          return (
@@ -864,7 +969,7 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                               </div>
                           </label>
 
-                          {groomImages.images.length > 0 && (
+                          {groomImages && groomImages.images && groomImages.images.length > 0 && (
                               <div>
                                   <h5 className="text-white font-medium mb-4 text-lg">
                                       תמונות שהועלו ({groomImages.images.length})
@@ -1190,8 +1295,23 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
              </div>
              <div>
                <label className="block text-sm font-medium text-slate-400 mb-1">קוד משחק</label>
-               <input type="text" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} readOnly={!!initialCode} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-center font-mono text-lg" placeholder="ABCD" maxLength={6} />
+               <input
+                type="text"
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white text-center font-mono text-lg"
+                placeholder="ABCD"
+                maxLength={6}
+              />
              </div>
+             {!joinPhoto && !isGroom && (
+               <div className="p-3 bg-amber-900/30 border border-amber-500/50 rounded-xl">
+                 <p className="text-amber-300 text-sm text-center flex items-center justify-center gap-2">
+                   <Camera className="w-4 h-4" />
+                   יש לצלם תמונה לפני הכניסה למשחק
+                 </p>
+               </div>
+             )}
              {!initialRole && (
                <div className="flex items-center gap-3 p-3 bg-slate-700/30 rounded-xl border border-slate-600">
                  <input
@@ -1216,7 +1336,7 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                </div>
              )}
            </div>
-           <button onClick={handleJoinSubmit} disabled={!joinName || !joinCode} className={`w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg ${isGroom ? 'bg-gradient-to-r from-yellow-600 to-orange-600' : 'bg-blue-600 hover:bg-blue-500'}`}>
+           <button onClick={handleJoinSubmit} disabled={!joinName || !joinCode || (!joinPhoto && !isGroom)} className={`w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg ${isGroom ? 'bg-gradient-to-r from-yellow-600 to-orange-600' : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'}`}>
              {isGroom ? 'אני מוכן!' : (existingId ? 'התחבר מחדש' : 'הכנס למשחק')}
            </button>
         </div>
@@ -1329,13 +1449,42 @@ const SetupPhase: React.FC<SetupPhaseProps> = ({
                           </button>
                       </div>
                   ) : (
-                      <button
-                        onClick={handleHostStart}
-                        className="bg-green-600 hover:bg-green-500 text-white px-10 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-green-900/20"
-                      >
-                          <PlayCircle className="w-6 h-6" />
-                          התחל את המסיבה!
-                      </button>
+                      <div className="space-y-3">
+                          {/* Saved configuration indicator */}
+                          {hasSavedConfig() && (
+                              <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                                  <div className="flex items-center justify-between text-sm">
+                                      <span className="text-green-400 flex items-center gap-2">
+                                          <FolderOpen className="w-4 h-4" />
+                                          יש הגדרות שמורות
+                                      </span>
+                                      <button
+                                          onClick={async () => {
+                                              if (confirm('למחוק את כל ההגדרות השמורות?')) {
+                                                  try {
+                                                      await clearSavedConfig();
+                                                      window.location.reload();
+                                                  } catch (error) {
+                                                      console.error('Failed to clear saved config:', error);
+                                                      alert('שגיאה במחיקת ההגדרות');
+                                                  }
+                                              }
+                                          }}
+                                          className="text-slate-400 hover:text-red-400 transition-colors"
+                                      >
+                                          <Trash2 className="w-4 h-4" />
+                                      </button>
+                                  </div>
+                              </div>
+                          )}
+                                                    <button
+                            onClick={handleHostStart}
+                            className="bg-green-600 hover:bg-green-500 text-white px-10 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-green-900/20"
+                          >
+                              <PlayCircle className="w-6 h-6" />
+                              התחל את המסיבה!
+                          </button>
+                      </div>
                   )}
               </div>
           </div>

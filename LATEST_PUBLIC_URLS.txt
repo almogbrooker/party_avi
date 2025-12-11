@@ -1,0 +1,28 @@
+╔════════════════════════════════════════════════════════════════╗
+║                    🎮 BACHELOR PARTY GAME 🎮                   ║
+║                   ✅ UPDATED PUBLIC URLS ✅                      ║
+╚════════════════════════════════════════════════════════════════╝
+
+🌐 GAME URL (Share with players):
+https://institutes-spirituality-strengthening-indicates.trycloudflare.com
+
+🔗 PEERJS SERVER URL (Public):
+https://dare-charm-convertible-rising.trycloudflare.com
+
+📱 LOCAL URLs (For the host):
+• App:      http://localhost:3000/
+• PeerJS:   http://localhost:9001/
+
+✅ Configuration:
+• Dynamic PeerJS tunnel URL detected and saved
+• Environment variables updated automatically
+• Both tunnels are running and accessible
+
+Status: Both services are running with public PeerJS server!
+Generated: Wed Dec 10 2025 12:28:40 GMT+0200
+
+Instructions:
+1. Share the Game URL with all players
+2. The app will automatically use the tunneled PeerJS server
+3. Players will connect to the public PeerJS server
+4. Everything works without manual configuration!

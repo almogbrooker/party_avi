@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeerJS Connection Test</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <h1>PeerJS Connection Test</h1>
+    <div id="status">Testing...</div>
+
+    <script>
+        const statusDiv = document.getElementById('status');
+
+        // Test 1: Check if PeerJS server is accessible
+        fetch('http://localhost:9001/peerjs')
+            .then(response => {
+                if (response.ok) {
+                    statusDiv.innerHTML += '<br>✅ PeerJS server is accessible!';
+                } else {
+                    statusDiv.innerHTML += '<br>❌ PeerJS server responded with error';
+                }
+
+                // Test 2: Try to initialize PeerJS
+                try {
+                    const peer = new Peer(null, {
+                        host: 'localhost',
+                        port: 9001,
+                        path: '/peerjs',
+                        secure: false,
+                        debug: 3
+                    });
+
+                    peer.on('open', (id) => {
+                        statusDiv.innerHTML += `<br>✅ PeerJS initialized successfully! ID: ${id}`;
+                    });
+
+                    peer.on('error', (err) => {
+                        statusDiv.innerHTML += `<br>❌ PeerJS error: ${err.type} - ${err.message}`;
+                    });
+
+                    setTimeout(() => {
+                        if (peer.disconnected) {
+                            statusDiv.innerHTML += '<br>⚠️ PeerJS connection timed out';
+                        }
+                    }, 5000);
+
+                } catch (err) {
+                    statusDiv.innerHTML += `<br>❌ Failed to initialize PeerJS: ${err.message}`;
+                }
+            })
+            .catch(err => {
+                statusDiv.innerHTML += `<br>❌ Cannot reach PeerJS server: ${err.message}`;
+            });
+    </script>
+</body>
+</html>

@@ -27,10 +27,14 @@ const isLocalhost = window.location.hostname === 'localhost' || window.location.
 
 // Configure PeerJS based on environment
 const getPeerJSConfig = () => {
+  // Check for environment variables (for tunneled PeerJS)
+  const envHost = import.meta.env.VITE_PEERJS_HOST;
+
   if (isLocalhost) {
-    // Local development
+    // Local development - use local PeerJS server
+    console.log('🔌 Using localhost PeerJS server');
     return {
-      debug: 3,
+      debug: 2,
       host: 'localhost',
       port: 9001,
       secure: false,
@@ -42,40 +46,38 @@ const getPeerJSConfig = () => {
         sdpSemantics: 'unified-plan'
       }
     };
+  } else if (envHost) {
+    // Remote with tunneled PeerJS server
+    console.log('🔌 Using tunneled PeerJS server:', envHost);
+    return {
+      debug: 2,
+      host: envHost,
+      port: 443,
+      secure: true,
+      path: '/peerjs',
+      pingInterval: 5000,
+      keepAlive: true,
+      config: {
+        iceServers: ICE_SERVERS,
+        sdpSemantics: 'unified-plan'
+      }
+    };
   } else {
-    // Remote/tunnel access - dynamically detect tunnel URL
-    // Extract tunnel domain from current URL
-    const currentHost = window.location.hostname;
-    if (currentHost.includes('trycloudflare.com')) {
-      return {
-        debug: 3,
-        host: currentHost,
-        port: 443,
-        secure: true,
-        path: '/peerjs',
-        pingInterval: 5000,
-        keepAlive: true,
-        config: {
-          iceServers: ICE_SERVERS,
-          sdpSemantics: 'unified-plan'
-        }
-      };
-    } else {
-      // Fallback to the original hardcoded tunnel URL
-      return {
-        debug: 3,
-        host: 'kitty-conditioning-qualifying-privacy.trycloudflare.com',
-        port: 443,
-        secure: true,
-        path: '/peerjs',
-        pingInterval: 5000,
-        keepAlive: true,
-        config: {
-          iceServers: ICE_SERVERS,
-          sdpSemantics: 'unified-plan'
-        }
-      };
-    }
+    // Fallback to hosted PeerJS service
+    console.log('🔌 Using hosted PeerJS service (fallback)');
+    return {
+      debug: 2,
+      host: '0.peerjs.com',
+      port: 443,
+      secure: true,
+      path: '/',
+      pingInterval: 5000,
+      keepAlive: true,
+      config: {
+        iceServers: ICE_SERVERS,
+        sdpSemantics: 'unified-plan'
+      }
+    };
   }
 };
 
@@ -138,7 +140,7 @@ export const initializePeer = async (id?: string): Promise<string> => {
   });
 };
 
-export const connectToHost = (hostId: string, metadata: any): Promise<any> => {
+export const connectToHost = (hostId: string, metadata: any, clientId?: string): Promise<any> => {
   return new Promise((resolve, reject) => {
     if (!peerInstance) {
       // Initialize a peer for the client first
@@ -150,7 +152,8 @@ export const connectToHost = (hostId: string, metadata: any): Promise<any> => {
       }
 
       let peerSettled = false;
-      peerInstance = new Peer(BASE_PEER_OPTIONS);
+      // If we have a persisted client ID (reconnect), reuse it to avoid duplicate players
+      peerInstance = new Peer(clientId || undefined, BASE_PEER_OPTIONS);
       const peerOpenTimeout = setTimeout(() => {
         if (peerSettled) return;
         peerSettled = true;

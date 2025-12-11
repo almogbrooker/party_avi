@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear IndexedDB</title>
+</head>
+<body>
+    <h1>Clearing IndexedDB...</h1>
+    <script>
+        // Delete the existing database to ensure clean start
+        const deleteReq = indexedDB.deleteDatabase('BachelorPartyGame');
+        deleteReq.onsuccess = () => {
+            console.log('IndexedDB deleted successfully');
+            document.body.innerHTML += '<p style="color: green;">✅ IndexedDB cleared successfully!</p><p>You can close this window.</p>';
+        };
+        deleteReq.onerror = (e) => {
+            console.error('Error deleting IndexedDB:', e);
+            document.body.innerHTML += '<p style="color: red;">❌ Error clearing database</p>';
+        };
+    </script>
+</body>
+</html>

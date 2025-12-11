@@ -1,22 +1,23 @@
 ╔════════════════════════════════════════════════════════════════╗
 ║                    🎮 BACHELOR PARTY GAME 🎮                   ║
-║                      Public URLs                               ║
+║                    ✅ CURRENTLY RUNNING ✅                       ║
 ╚════════════════════════════════════════════════════════════════╝
 
 🌐 GAME APPLICATION URL (Share this with players):
-https://effectively-military-offerings-ensures.trycloudflare.com
+https://notified-heath-tribunal-ocean.trycloudflare.com
 
-🔗 PEERJS SERVER URL (Used automatically by the game):
-https://medical-jacket-opportunity-police.trycloudflare.com
+🔗 PEERJS SERVER URL (Used automatically):
+https://opt-developers-sperm-tariff.trycloudflare.com
 
-📱 LOCAL URLs (For you):
+📱 LOCAL URLs (For the host):
 • App:      http://localhost:3000/
 • PeerJS:   http://localhost:9001/
 
-Generated: ד' דצמ 10 11:45:14 IST 2025
+Status: ✅ Both services are running and publicly accessible
+Generated: Wed Dec 10 2025 11:54:00 GMT+0200
 
 Instructions:
 1. Share the Game Application URL with all players
-2. Players can join using that URL from any device
-3. Keep this terminal window open to maintain public access
-4. Press Ctrl+C to stop all services
+2. Players can join from any device with internet access
+3. The app will automatically connect to the PeerJS tunnel
+4. Keep the terminal window open to maintain public access
