@@ -4,16 +4,16 @@
 ╚════════════════════════════════════════════════════════════════╝
 
 🌐 GAME APPLICATION URL (Share this with players):
-https://effectively-military-offerings-ensures.trycloudflare.com
+https://vendors-legitimate-ahead-fisher.trycloudflare.com
 
 🔗 PEERJS SERVER URL (Used automatically by the game):
-https://medical-jacket-opportunity-police.trycloudflare.com
+https://improvements-seemed-danny-embassy.trycloudflare.com
 
 📱 LOCAL URLs (For you):
 • App:      http://localhost:3000/
 • PeerJS:   http://localhost:9001/
 
-Generated: ד' דצמ 10 11:45:14 IST 2025
+Generated: $(date)
 
 Instructions:
 1. Share the Game Application URL with all players

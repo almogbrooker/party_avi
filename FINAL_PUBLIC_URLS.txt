@@ -1,13 +1,5 @@
-╔════════════════════════════════════════════════════════════════╗
-║                    🎮 BACHELOR PARTY GAME 🎮                   ║
-║                    ✅ FIXED AND RUNNING ✅                      ║
-╚════════════════════════════════════════════════════════════════╝
-
-🌐 GAME URL (Share with players):
-https://levy-douglas-solomon-publicity.trycloudflare.com
-
 🔗 PEERJS SERVER URL (Configured automatically):
-https://misc-thesaurus-farms-tests.trycloudflare.com
+https://improvements-seemed-danny-embassy.trycloudflare.com
 
 📱 LOCAL URLs (For the host):
 • App:      http://localhost:3000/
@@ -20,9 +12,9 @@ https://misc-thesaurus-farms-tests.trycloudflare.com
 4. Server restarted with new configuration
 
 Status: Both services are running and should work for remote players!
-Generated: Wed Dec 10 2025 12:06:00 GMT+0200
+Generated: $(date)
 
 Instructions for players:
-1. Use the Game URL to join the game
+1. Use the Game URL to join the game: https://vendors-legitimate-ahead-fisher.trycloudflare.com
 2. The app will automatically connect to the PeerJS server
 3. No special configuration needed - just click and play!
